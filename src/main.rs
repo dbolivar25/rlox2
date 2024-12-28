@@ -3,7 +3,7 @@ use log::{debug, info};
 use nu_ansi_term::{Color, Style};
 use reedline::{DefaultHinter, Reedline, Signal};
 use rlox2::{
-    cli::Args,
+    cli::{Args, Commands},
     error::Result,
     repl::{REPLPrompt, REPLValidator},
     tokenizer::tokenize,
@@ -45,26 +45,38 @@ fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn check_file(file: PathBuf) -> Result<()> {
+    let bytes = fs::read(file)?;
+    let tokens = tokenize(&bytes)?;
+
+    dbg!(tokens);
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
+    let args = Args::parse();
 
-    match Args::parse() {
-        Args { file: None, .. } => {
-            info!("REPL MODE");
-
-            run_repl()?;
-        }
-        Args {
-            file: Some(file),
-            args,
-        } => {
+    match args.command {
+        Commands::Run { file, args } => {
             info!("FILE MODE");
             debug!("file: {:?}", file);
             debug!("args: {:?}", args);
 
             run_file(file, args)?;
         }
-    }
+        Commands::Check { file } => {
+            info!("CHECK MODE");
+            debug!("file: {:?}", file);
 
+            check_file(file)?;
+        }
+        Commands::Repl => {
+            info!("REPL MODE");
+
+            run_repl()?;
+        }
+    }
     Ok(())
 }

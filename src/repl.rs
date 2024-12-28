@@ -39,7 +39,6 @@ impl Prompt for REPLPrompt {
     }
 }
 
-#[derive(Debug, Default)]
 pub struct REPLValidator;
 
 impl Validator for REPLValidator {
