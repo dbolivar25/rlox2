@@ -1,54 +1,55 @@
-fn get_prediction(num) {
-  if (num == 1) {
-    return "Yes";
-  }
+let get_prediction = fn(num) {
+  if num == 1 {
+    println("Yes");
+  };
 
-  if (num == 2) {
-    return "No";
-  }
+  if num == 2 {
+    println("No");
+  };
 
-  if (num == 3) {
-    return "Maybe";
-  }
+  if num == 3 {
+    println("Maybe");
+  };
 
-  if (num == 4) {
-    return "Ask again later";
-  }
+  if num == 4 {
+    println("Ask again later");
+  };
 
-  if (num == 5) {
-    return "Not a chance";
-  }
-}
+  if num == 5 {
+    println("Not a chance");
+  };
+};
 
-fn get_rand() {
-  return rand_int_range(1, 5);
-}
 
-fn get_random_prediction() {
-  return get_prediction(get_rand());
-}
+let get_rand = fn() {
+  rand_int_range(1, 5)
+};
 
-fn game_loop() {
+let get_random_prediction = fn() {
+  get_prediction(get_rand());
+};
+
+let main = fn() {
   println("Ask the magic ball a question:");
   print("|> ");
   let input = read_line();
 
-  while (input != "quit") {
-    if (input == "") {
+  while input != "quit" {
+    if input == "" {
       println("You must ask a question.");
     } else {
-      println(get_random_prediction());
-    }
+      get_random_prediction();
+    };
 
     println("");
     println("Ask the magic ball a question:");
-    print("> ");
+    print("|> ");
 
     input = read_line();
-  }
+  };
 
   println("");
   println("Thanks for playing!");
-}
+};
 
-game_loop();
+main()
