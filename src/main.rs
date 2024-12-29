@@ -1,7 +1,8 @@
 use clap::Parser;
+use dirs::home_dir;
 use log::{debug, info};
 use nu_ansi_term::{Color, Style};
-use reedline::{DefaultHinter, Reedline, Signal};
+use reedline::{DefaultHinter, FileBackedHistory, Reedline, Signal};
 use rlox2::{
     cli::{Args, Commands},
     error::Result,
@@ -36,12 +37,21 @@ fn check_file(file: PathBuf) -> Result<()> {
 }
 
 fn run_repl() -> Result<()> {
+    let history_file = home_dir()
+        .expect("Could not find home directory")
+        .join(".rlox_history");
+
+    let history = Box::new(
+        FileBackedHistory::with_file(20, history_file)
+            .expect("Error configuring history with file"),
+    );
     let mut line_editor = Reedline::create()
         .with_hinter(Box::new(
             DefaultHinter::default().with_style(Style::new().italic().fg(Color::LightGray)),
         ))
         .with_highlighter(Box::new(SyntaxHighlighter))
-        .with_validator(Box::new(REPLValidator));
+        .with_validator(Box::new(REPLValidator))
+        .with_history(history);
     let prompt = REPLPrompt;
 
     loop {
