@@ -20,24 +20,27 @@ impl Prompt for REPLPrompt {
     }
 
     fn render_prompt_indicator(&self, _edit_mode: PromptEditMode) -> Cow<str> {
-        Cow::Borrowed("❯ ")
+        Cow::Borrowed("\x1b[38;2;191;168;227m❯\x1b[0m ")
     }
 
     fn render_prompt_multiline_indicator(&self) -> Cow<str> {
-        Cow::Borrowed("  ... ")
+        Cow::Borrowed("\x1b[90m  ...\x1b[0m ")
     }
 
     fn render_prompt_history_search_indicator(
         &self,
         history_search: PromptHistorySearch,
     ) -> Cow<str> {
-        let prefix = match history_search.status {
-            PromptHistorySearchStatus::Passing => "",
-            PromptHistorySearchStatus::Failing => "failing ",
+        let (status_color, prefix) = match history_search.status {
+            PromptHistorySearchStatus::Passing => ("\x1b[38;2;66;113;139m", "SEARCH"), // Green for success
+            PromptHistorySearchStatus::Failing => ("\x1b[31m", "NOT FOUND"), // Red for failure
         };
+
+        let search_term = history_search.term;
+
         Cow::Owned(format!(
-            "({}reverse-search: {}) ",
-            prefix, history_search.term
+            " {}[{}]\x1b[0m \x1b[36m{}\x1b[0m\x1b[38;2;191;168;227m❯\x1b[0m ",
+            status_color, prefix, search_term
         ))
     }
 }
@@ -190,11 +193,11 @@ impl Highlighter for SyntaxHighlighter {
                     | Token::Struct
                     | Token::And
                     | Token::Or
-                    | Token::True
-                    | Token::False
                     | Token::Nil => KEYWORD_COLOR,
                     // Literals
-                    Token::String(_) | Token::Number(_) => LITERAL_COLOR,
+                    Token::String(_) | Token::Number(_) | Token::True | Token::False => {
+                        LITERAL_COLOR
+                    }
                     // Operators
                     Token::Semicolon
                     | Token::LeftBrace
