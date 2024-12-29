@@ -1,6 +1,6 @@
+use crate::error::{Error, Result};
 use log::debug;
-
-use crate::error::{Error, Result, TokenizerError};
+use std::f64;
 
 #[derive(Debug)]
 pub enum Token {
@@ -19,6 +19,7 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    Percent,
 
     Bang,
     Equal,
@@ -52,6 +53,22 @@ pub enum Token {
     NewLine,
     EOF,
 }
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Token::Number(a), Token::Number(b)) => {
+                const EPSILON: f64 = 1e-10;
+                (a - b).abs() < EPSILON
+            }
+            (Token::String(a), Token::String(b)) => a == b,
+            (Token::Identifier(a), Token::Identifier(b)) => a == b,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+}
+
+impl Eq for Token {}
 
 pub fn tokenize(bytes: &[u8]) -> Result<Vec<Token>> {
     let n = bytes.len();
@@ -130,6 +147,7 @@ fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
         b'-' => Some(Token::Minus),
         b'*' => Some(Token::Star),
         b'/' => Some(Token::Slash),
+        b'%' => Some(Token::Percent),
         b'=' => Some(Token::Equal),
         b'!' => Some(Token::Bang),
         b'<' => Some(Token::Less),
@@ -150,7 +168,9 @@ fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
         }
 
         if end_byte >= n {
-            return Err(Error::Tokenizer(TokenizerError {}));
+            return Err(Error::Tokenizer {
+                message: "Unterminated string literal: missing closing double quote".into(),
+            });
         }
 
         return Ok((
@@ -168,7 +188,9 @@ fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
         }
 
         if end_byte >= n {
-            return Err(Error::Tokenizer(TokenizerError {}));
+            return Err(Error::Tokenizer {
+                message: "Unterminated string literal: missing closing single quote".into(),
+            });
         }
 
         return Ok((
@@ -189,7 +211,9 @@ fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
             end_byte += 1;
 
             if end_byte >= n || !bytes[end_byte].is_ascii_digit() {
-                return Err(Error::Tokenizer(TokenizerError {}));
+                return Err(Error::Tokenizer {
+                    message: "Invalid number format: expected digit after decimal point".into(),
+                });
             }
 
             while end_byte < n && bytes[end_byte].is_ascii_digit() {
@@ -236,5 +260,7 @@ fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
         return Ok((end_byte, token));
     }
 
-    Err(Error::Tokenizer(TokenizerError {}))
+    Err(Error::Tokenizer {
+        message: "Invalid character encountered in input".into(),
+    })
 }
