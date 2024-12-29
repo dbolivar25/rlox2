@@ -5,26 +5,65 @@ use reedline::{DefaultHinter, Reedline, Signal};
 use rlox2::{
     cli::{Args, Commands},
     error::Result,
-    repl::{REPLPrompt, REPLValidator},
+    parser::parse,
+    repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
     tokenizer::tokenize,
 };
 use std::{fs, path::PathBuf};
+
+fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
+    let bytes = fs::read(file)?;
+
+    let tokens = tokenize(&bytes)?;
+    dbg!(&tokens);
+
+    let ast = parse(&tokens)?;
+    dbg!(&ast);
+
+    Ok(())
+}
+
+fn check_file(file: PathBuf) -> Result<()> {
+    let bytes = fs::read(file)?;
+
+    let tokens = tokenize(&bytes)?;
+    dbg!(&tokens);
+
+    let ast = parse(&tokens)?;
+    dbg!(&ast);
+
+    Ok(())
+}
 
 fn run_repl() -> Result<()> {
     let mut line_editor = Reedline::create()
         .with_hinter(Box::new(
             DefaultHinter::default().with_style(Style::new().italic().fg(Color::LightGray)),
         ))
+        .with_highlighter(Box::new(SyntaxHighlighter))
         .with_validator(Box::new(REPLValidator));
     let prompt = REPLPrompt;
 
     loop {
         match line_editor.read_line(&prompt) {
-            Ok(Signal::Success(buffer)) => {
-                let tokens = tokenize(buffer.as_bytes()).ok();
-
-                dbg!(tokens);
-            }
+            Ok(Signal::Success(buffer)) => match tokenize(buffer.as_bytes()) {
+                Ok(tokens) => match parse(&tokens) {
+                    Ok(expression) => {
+                        dbg!(expression);
+                        continue;
+                    }
+                    Err(parse_error) => {
+                        dbg!(tokens);
+                        dbg!(parse_error);
+                        continue;
+                    }
+                },
+                Err(tokenize_error) => {
+                    dbg!(buffer);
+                    dbg!(tokenize_error);
+                    continue;
+                }
+            },
             Ok(Signal::CtrlD | Signal::CtrlC) => {
                 return Ok(());
             }
@@ -34,24 +73,6 @@ fn run_repl() -> Result<()> {
             }
         }
     }
-}
-
-fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
-    let bytes = fs::read(file)?;
-    let tokens = tokenize(&bytes)?;
-
-    dbg!(tokens);
-
-    Ok(())
-}
-
-fn check_file(file: PathBuf) -> Result<()> {
-    let bytes = fs::read(file)?;
-    let tokens = tokenize(&bytes)?;
-
-    dbg!(tokens);
-
-    Ok(())
 }
 
 fn main() -> Result<()> {
