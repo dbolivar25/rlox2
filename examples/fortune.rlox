@@ -12,7 +12,6 @@ let get_prediction = fn(num) {
   }
 };
 
-
 let get_rand = fn() {
   rand_int_range(1, 5)
 };
