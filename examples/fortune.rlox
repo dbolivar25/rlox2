@@ -1,23 +1,15 @@
 let get_prediction = fn(num) {
   if num == 1 {
-    println("Yes");
-  };
-
-  if num == 2 {
-    println("No");
-  };
-
-  if num == 3 {
-    println("Maybe");
-  };
-
-  if num == 4 {
-    println("Ask again later");
-  };
-
-  if num == 5 {
-    println("Not a chance");
-  };
+    "Yes"
+  } else if num == 2 {
+    "No"
+  } else if num == 3 {
+    "Maybe"
+  } else if num == 4 {
+    "Ask again later"
+  } else if num == 5 {
+    "Not a chance"
+  }
 };
 
 
@@ -26,7 +18,7 @@ let get_rand = fn() {
 };
 
 let get_random_prediction = fn() {
-  get_prediction(get_rand());
+  get_prediction(get_rand())
 };
 
 let main = fn() {
@@ -38,7 +30,7 @@ let main = fn() {
     if input == "" {
       println("You must ask a question.");
     } else {
-      get_random_prediction();
+      println(get_random_prediction());
     };
 
     println("");
