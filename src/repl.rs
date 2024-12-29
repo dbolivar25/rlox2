@@ -20,7 +20,7 @@ impl Prompt for REPLPrompt {
     }
 
     fn render_prompt_indicator(&self, _edit_mode: PromptEditMode) -> Cow<str> {
-        Cow::Borrowed("> ")
+        Cow::Borrowed("❯ ")
     }
 
     fn render_prompt_multiline_indicator(&self) -> Cow<str> {
