@@ -1,9 +1,14 @@
-use crate::error::{Error, Result};
-use log::debug;
-use std::f64;
+use crate::error::{tokenizer_error, Result};
+use std::{f64, ops::Range};
 
 #[derive(Debug)]
-pub enum Token {
+pub struct Token {
+    pub token_type: TokenType,
+    pub byte_span: Range<usize>,
+}
+
+#[derive(Debug)]
+pub enum TokenType {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -50,217 +55,298 @@ pub enum Token {
     While,
     Fn,
 
-    NewLine,
+    Skip,
     EOF,
 }
 
-impl PartialEq for Token {
+impl PartialEq for TokenType {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Token::Number(a), Token::Number(b)) => {
+            (TokenType::Number(a), TokenType::Number(b)) => {
                 const EPSILON: f64 = 1e-10;
                 (a - b).abs() < EPSILON
             }
-            (Token::String(a), Token::String(b)) => a == b,
-            (Token::Identifier(a), Token::Identifier(b)) => a == b,
+            (TokenType::String(a), TokenType::String(b)) => a == b,
+            (TokenType::Identifier(a), TokenType::Identifier(b)) => a == b,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
 
-impl Eq for Token {}
+impl Eq for TokenType {}
 
-pub fn tokenize(bytes: &[u8]) -> Result<Vec<Token>> {
-    let n = bytes.len();
+pub fn tokenize(source: &[u8]) -> Result<Vec<Token>> {
+    let n = source.len();
     let mut cursor = 0;
-    let mut line_number = 1;
     let mut tokens = Vec::with_capacity(n); // upper bound
 
     loop {
-        match next_token(&bytes[cursor..]) {
-            Ok((bytes_read, Token::EOF)) => {
-                cursor += bytes_read;
-                tokens.push(Token::EOF);
+        let (bytes_read, token) = next_token(source, cursor)?;
+        cursor += bytes_read;
 
-                assert_eq!(cursor, n);
-
+        match token.token_type {
+            TokenType::EOF => {
+                tokens.push(token);
                 return Ok(tokens);
             }
-            Ok((bytes_read, Token::NewLine)) => {
-                cursor += bytes_read;
-                line_number += 1;
-            }
-            Ok((bytes_read, token)) => {
-                cursor += bytes_read;
-                tokens.push(token);
-            }
-            Err(err) => {
-                debug!("{} on line {}", err, line_number);
-                return Err(err);
-            }
+            TokenType::Skip => continue,
+            _ => tokens.push(token),
         }
     }
 }
 
-fn next_token(bytes: &[u8]) -> Result<(usize, Token)> {
+fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
+    let bytes = &source[offset..];
     let n = bytes.len();
     if n == 0 {
-        return Ok((0, Token::EOF));
+        return Ok((
+            0,
+            Token {
+                token_type: TokenType::EOF,
+                byte_span: offset..offset,
+            },
+        ));
     }
 
-    let cursor = bytes
+    let whitespace = bytes
         .iter()
-        .take_while(|&&b| matches!(b, b' ' | b'\t' | b'\r' | b'\\'))
+        .take_while(|&&b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
         .count();
 
-    if cursor == n {
-        return Ok((cursor, Token::EOF));
+    if whitespace == n {
+        return Ok((
+            whitespace,
+            Token {
+                token_type: TokenType::EOF,
+                byte_span: (offset + whitespace)..(offset + whitespace),
+            },
+        ));
+    }
+
+    let token_start = offset + whitespace;
+    let cursor = whitespace;
+
+    if cursor + 1 < n && bytes[cursor..cursor + 2] == *b"//" {
+        let comment_start = cursor + 2;
+        let mut comment_end = comment_start;
+
+        // Consume until newline or EOF
+        while comment_end < n && bytes[comment_end] != b'\n' {
+            comment_end += 1;
+        }
+
+        // Include the newline in the consumed characters if we found one
+        if comment_end < n && bytes[comment_end] == b'\n' {
+            comment_end += 1;
+            return Ok((
+                comment_end,
+                Token {
+                    token_type: TokenType::Skip,
+                    byte_span: token_start..(token_start + comment_end - cursor),
+                },
+            ));
+        }
+
+        // If we reached EOF, return EOF token
+        return Ok((
+            comment_end,
+            Token {
+                token_type: TokenType::EOF,
+                byte_span: (offset + comment_end)..(offset + comment_end),
+            },
+        ));
     }
 
     if cursor + 1 < n {
-        let token = match &bytes[cursor..cursor + 2] {
-            b"==" => Some(Token::EqualEqual),
-            b"!=" => Some(Token::BangEqual),
-            b"<=" => Some(Token::LessEqual),
-            b">=" => Some(Token::GreaterEqual),
-            b"<>" => Some(Token::Concat),
+        let token_type = match &bytes[cursor..cursor + 2] {
+            b"==" => Some(TokenType::EqualEqual),
+            b"!=" => Some(TokenType::BangEqual),
+            b"<=" => Some(TokenType::LessEqual),
+            b">=" => Some(TokenType::GreaterEqual),
+            b"<>" => Some(TokenType::Concat),
             _ => None,
         };
 
-        if let Some(token) = token {
-            return Ok((cursor + 2, token));
+        if let Some(token_type) = token_type {
+            return Ok((
+                cursor + 2,
+                Token {
+                    token_type,
+                    byte_span: token_start..(token_start + 2),
+                },
+            ));
         }
     }
 
     let token = match bytes[cursor] {
-        b'\n' => Some(Token::NewLine),
-        b'(' => Some(Token::LeftParen),
-        b')' => Some(Token::RightParen),
-        b'{' => Some(Token::LeftBrace),
-        b'}' => Some(Token::RightBrace),
-        b'[' => Some(Token::LeftSquare),
-        b']' => Some(Token::RightSquare),
-        b',' => Some(Token::Comma),
-        b'.' => Some(Token::Dot),
-        b';' => Some(Token::Semicolon),
-        b'+' => Some(Token::Plus),
-        b'-' => Some(Token::Minus),
-        b'*' => Some(Token::Star),
-        b'/' => Some(Token::Slash),
-        b'%' => Some(Token::Percent),
-        b'=' => Some(Token::Equal),
-        b'!' => Some(Token::Bang),
-        b'<' => Some(Token::Less),
-        b'>' => Some(Token::Greater),
+        b'(' => Some(TokenType::LeftParen),
+        b')' => Some(TokenType::RightParen),
+        b'{' => Some(TokenType::LeftBrace),
+        b'}' => Some(TokenType::RightBrace),
+        b'[' => Some(TokenType::LeftSquare),
+        b']' => Some(TokenType::RightSquare),
+        b',' => Some(TokenType::Comma),
+        b'.' => Some(TokenType::Dot),
+        b';' => Some(TokenType::Semicolon),
+        b'+' => Some(TokenType::Plus),
+        b'-' => Some(TokenType::Minus),
+        b'*' => Some(TokenType::Star),
+        b'/' => Some(TokenType::Slash),
+        b'%' => Some(TokenType::Percent),
+        b'=' => Some(TokenType::Equal),
+        b'!' => Some(TokenType::Bang),
+        b'<' => Some(TokenType::Less),
+        b'>' => Some(TokenType::Greater),
         _ => None,
     };
 
-    if let Some(token) = token {
-        return Ok((cursor + 1, token));
+    if let Some(token_type) = token {
+        return Ok((
+            cursor + 1,
+            Token {
+                token_type,
+                byte_span: token_start..(token_start + 1),
+            },
+        ));
     }
 
     if bytes[cursor] == b'"' {
-        let start_byte = cursor + 1;
-        let mut end_byte = cursor + 1;
+        let str_start = cursor + 1;
+        let mut str_end = str_start;
 
-        while end_byte < n && bytes[end_byte] != b'"' {
-            end_byte += 1;
+        while str_end < n && bytes[str_end] != b'"' {
+            str_end += 1;
         }
 
-        if end_byte >= n {
-            return Err(Error::Tokenizer {
-                message: "Unterminated string literal: missing closing double quote".into(),
-            });
+        if str_end >= n {
+            return tokenizer_error(
+                source,
+                "Unterminated string literal: missing closing double quote",
+                token_start + (str_end - cursor),
+            );
         }
 
         return Ok((
-            end_byte + 1,
-            Token::String(bytes[start_byte..end_byte].escape_ascii().to_string()),
+            str_end + 1,
+            Token {
+                token_type: TokenType::String(bytes[str_start..str_end].escape_ascii().to_string()),
+                byte_span: token_start..(token_start + (str_end - cursor) + 1),
+            },
         ));
     }
 
     if bytes[cursor] == b'\'' {
-        let start_byte = cursor + 1;
-        let mut end_byte = cursor + 1;
+        let str_start = cursor + 1;
+        let mut str_end = str_start;
 
-        while end_byte < n && bytes[end_byte] != b'\'' {
-            end_byte += 1;
+        while str_end < n && bytes[str_end] != b'\'' {
+            str_end += 1;
         }
 
-        if end_byte >= n {
-            return Err(Error::Tokenizer {
-                message: "Unterminated string literal: missing closing single quote".into(),
-            });
+        if str_end >= n {
+            return tokenizer_error(
+                source,
+                "Unterminated string literal: missing closing single quote",
+                token_start + (str_end - cursor),
+            );
         }
 
         return Ok((
-            end_byte + 1,
-            Token::String(bytes[start_byte..end_byte].escape_ascii().to_string()),
+            str_end + 1,
+            Token {
+                token_type: TokenType::String(bytes[str_start..str_end].escape_ascii().to_string()),
+                byte_span: token_start..(token_start + (str_end - cursor) + 1),
+            },
         ));
     }
 
     if bytes[cursor].is_ascii_digit() {
-        let start_byte = cursor;
-        let mut end_byte = cursor;
+        let num_start = cursor;
+        let mut num_end = cursor;
 
-        while end_byte < n && bytes[end_byte].is_ascii_digit() {
-            end_byte += 1;
+        while num_end < n && bytes[num_end].is_ascii_digit() {
+            num_end += 1;
         }
 
-        if end_byte < n && bytes[end_byte] == b'.' {
-            end_byte += 1;
+        if num_end < n && bytes[num_end] == b'.' {
+            num_end += 1;
 
-            if end_byte >= n || !bytes[end_byte].is_ascii_digit() {
-                return Err(Error::Tokenizer {
-                    message: "Invalid number format: expected digit after decimal point".into(),
-                });
+            if num_end >= n || !bytes[num_end].is_ascii_digit() {
+                return tokenizer_error(
+                    source,
+                    &format!(
+                        "Invalid number format: expected digit after decimal point, found '{}'",
+                        if num_end >= n {
+                            "end of file"
+                        } else {
+                            std::str::from_utf8(&bytes[num_end..num_end + 1]).unwrap_or("?")
+                        }
+                    ),
+                    token_start + num_end,
+                );
             }
 
-            while end_byte < n && bytes[end_byte].is_ascii_digit() {
-                end_byte += 1;
+            while num_end < n && bytes[num_end].is_ascii_digit() {
+                num_end += 1;
             }
         }
 
         return Ok((
-            end_byte,
-            Token::Number(
-                bytes[start_byte..end_byte]
-                    .escape_ascii()
-                    .to_string()
-                    .parse()?,
-            ),
+            num_end,
+            Token {
+                token_type: TokenType::Number(
+                    bytes[num_start..num_end]
+                        .escape_ascii()
+                        .to_string()
+                        .parse()?,
+                ),
+                byte_span: token_start..(token_start + num_end - cursor),
+            },
         ));
     }
 
     if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
-        let start_byte = cursor;
-        let mut end_byte = cursor + 1;
+        let ident_start = cursor;
+        let mut ident_end = cursor + 1;
 
-        while end_byte < n && (bytes[end_byte].is_ascii_alphanumeric() || bytes[end_byte] == b'_') {
-            end_byte += 1;
+        while ident_end < n
+            && (bytes[ident_end].is_ascii_alphanumeric() || bytes[ident_end] == b'_')
+        {
+            ident_end += 1;
         }
 
-        let token = match &bytes[start_byte..end_byte] {
-            b"and" => Token::And,
-            b"or" => Token::Or,
-            b"struct" => Token::Struct,
-            b"let" => Token::Let,
-            b"if" => Token::If,
-            b"else" => Token::Else,
-            b"nil" => Token::Nil,
-            b"return" => Token::Return,
-            b"true" => Token::True,
-            b"false" => Token::False,
-            b"for" => Token::For,
-            b"while" => Token::While,
-            b"fn" => Token::Fn,
-            _ => Token::Identifier(bytes[start_byte..end_byte].escape_ascii().to_string()),
+        let token_type = match &bytes[ident_start..ident_end] {
+            b"and" => TokenType::And,
+            b"or" => TokenType::Or,
+            b"struct" => TokenType::Struct,
+            b"let" => TokenType::Let,
+            b"if" => TokenType::If,
+            b"else" => TokenType::Else,
+            b"nil" => TokenType::Nil,
+            b"return" => TokenType::Return,
+            b"true" => TokenType::True,
+            b"false" => TokenType::False,
+            b"for" => TokenType::For,
+            b"while" => TokenType::While,
+            b"fn" => TokenType::Fn,
+            _ => TokenType::Identifier(bytes[ident_start..ident_end].escape_ascii().to_string()),
         };
 
-        return Ok((end_byte, token));
+        return Ok((
+            ident_end,
+            Token {
+                token_type,
+                byte_span: token_start..(token_start + ident_end - cursor),
+            },
+        ));
     }
 
-    Err(Error::Tokenizer {
-        message: "Invalid character encountered in input".into(),
-    })
+    tokenizer_error(
+        source,
+        &format!(
+            "Invalid character '{}' encountered in input",
+            bytes[cursor].escape_ascii()
+        ),
+        token_start,
+    )
 }
