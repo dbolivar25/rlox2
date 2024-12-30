@@ -14,24 +14,23 @@ use rlox2::{
 use std::{fs, path::PathBuf};
 
 fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
-    let bytes = fs::read(file)?;
+    let source = fs::read(file)?;
 
-    let tokens = tokenize(&bytes)?;
-    dbg!(&tokens);
+    let tokens = tokenize(&source)?;
 
-    let ast = parse(&tokens)?;
+    let ast = parse(&source, &tokens)?;
     dbg!(&ast);
 
     Ok(())
 }
 
 fn check_file(file: PathBuf) -> Result<()> {
-    let bytes = fs::read(file)?;
+    let source = fs::read(file)?;
 
-    let tokens = tokenize(&bytes)?;
+    let tokens = tokenize(&source)?;
     dbg!(&tokens);
 
-    let ast = parse(&tokens)?;
+    let ast = parse(&source, &tokens)?;
     dbg!(&ast);
 
     Ok(())
@@ -61,17 +60,15 @@ fn run_repl() -> Result<()> {
     loop {
         match line_editor.read_line(&prompt)? {
             Signal::Success(buffer) => {
-                Result::pure(buffer)
-                    .and_then(|buffer| tokenize(buffer.as_bytes()))
-                    .inspect(|tokens| {
-                        dbg!(tokens);
-                    })
-                    .and_then(|tokens| parse(&tokens))
+                let source = buffer.as_bytes();
+                Result::pure(())
+                    .and_then(|_| tokenize(source))
+                    .and_then(|tokens| parse(source, &tokens))
                     .inspect(|ast| {
                         dbg!(ast);
                     })
                     .inspect_err(|err| {
-                        dbg!(err);
+                        eprintln!("{}", err);
                     })
                     .ok();
             }
@@ -92,18 +89,30 @@ fn main() -> Result<()> {
             debug!("file: {:?}", file);
             debug!("args: {:?}", args);
 
-            run_file(file, args)?;
+            run_file(file, args)
+                .inspect_err(|err| {
+                    eprintln!("{}", err);
+                })
+                .ok();
         }
         Commands::Check { file } => {
             info!("CHECK MODE");
             debug!("file: {:?}", file);
 
-            check_file(file)?;
+            check_file(file)
+                .inspect_err(|err| {
+                    eprintln!("{}", err);
+                })
+                .ok();
         }
         Commands::Repl => {
             info!("REPL MODE");
 
-            run_repl()?;
+            run_repl()
+                .inspect_err(|err| {
+                    eprintln!("{}", err);
+                })
+                .ok();
         }
     }
     Ok(())
