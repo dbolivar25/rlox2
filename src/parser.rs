@@ -1,6 +1,6 @@
 use crate::{
-    error::{Error, Result},
-    tokenizer::Token,
+    error::{parser_error, Result},
+    tokenizer::{Token, TokenType},
 };
 
 #[derive(Debug)]
@@ -34,6 +34,7 @@ pub enum Expr {
         params: Vec<String>,
         body: Box<Expr>,
     },
+    List(Vec<Expr>),
     Call {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
@@ -77,24 +78,22 @@ pub enum BinaryOp {
     Or,
 }
 
-pub fn parse(tokens: &[Token]) -> Result<Expr> {
+pub fn parse(source: &[u8], tokens: &[Token]) -> Result<Expr> {
     let mut consumed = 0;
     let mut exprs = Vec::new();
 
-    while consumed < tokens.len() && tokens[consumed] != Token::EOF {
-        let (expr, expr_consumed) = match &tokens[consumed] {
-            Token::LeftBrace => parse_block(&tokens[consumed..])?,
-            _ => parse_expression(&tokens[consumed..], 0)?,
+    while consumed < tokens.len() && tokens[consumed].token_type != TokenType::EOF {
+        let (expr, expr_consumed) = match &tokens[consumed].token_type {
+            TokenType::LeftBrace => parse_block(source, &tokens[consumed..])?,
+            _ => parse_expression(source, &tokens[consumed..], 0)?,
         };
         consumed += expr_consumed;
 
         // Require semicolons after all expressions including blocks
-        if consumed < tokens.len() && tokens[consumed] == Token::Semicolon {
+        if consumed < tokens.len() && tokens[consumed].token_type == TokenType::Semicolon {
             consumed += 1;
-        } else if consumed < tokens.len() && tokens[consumed] != Token::EOF {
-            return Err(Error::Parser {
-                message: "Expected ';' after expression".to_string(),
-            });
+        } else if consumed < tokens.len() && tokens[consumed].token_type != TokenType::EOF {
+            return parser_error(source, "Expected ';' after expression", &tokens[consumed]);
         }
 
         exprs.push(expr);
@@ -103,48 +102,48 @@ pub fn parse(tokens: &[Token]) -> Result<Expr> {
     Ok(Expr::Block(exprs))
 }
 
-fn parse_expression(tokens: &[Token], precedence: u8) -> Result<(Expr, usize)> {
-    if tokens.is_empty() || tokens[0] == Token::EOF {
-        return Err(Error::Parser {
-            message: "Expected expression".to_string(),
-        });
+fn parse_expression(source: &[u8], tokens: &[Token], precedence: u8) -> Result<(Expr, usize)> {
+    if tokens.is_empty() || tokens[0].token_type == TokenType::EOF {
+        return parser_error(source, "Expected expression got EOF", &tokens[0]);
     }
 
-    match &tokens[0] {
-        Token::Let => parse_let(tokens),
-        Token::If => parse_if(tokens),
-        Token::While => parse_while(tokens),
-        Token::Fn => parse_function(tokens),
-        Token::LeftBrace => parse_block(tokens),
-        _ => parse_operator_precedence(tokens, precedence),
+    match &tokens[0].token_type {
+        TokenType::Let => parse_let(source, tokens),
+        TokenType::If => parse_if(source, tokens),
+        TokenType::While => parse_while(source, tokens),
+        TokenType::Fn => parse_function(source, tokens),
+        TokenType::LeftBrace => parse_block(source, tokens),
+        _ => parse_operator_precedence(source, tokens, precedence),
     }
 }
 
-fn parse_scope(tokens: &[Token]) -> Result<(Vec<Expr>, usize)> {
+fn parse_scope(source: &[u8], tokens: &[Token]) -> Result<(Vec<Expr>, usize)> {
     let mut consumed = 0;
     let mut expressions = Vec::new();
 
     while consumed < tokens.len() {
-        if tokens[consumed] == Token::RightBrace {
+        if tokens[consumed].token_type == TokenType::RightBrace {
             break;
         }
 
-        let (expr, expr_consumed) = match &tokens[consumed] {
-            Token::LeftBrace => parse_block(&tokens[consumed..])?,
-            _ => parse_expression(&tokens[consumed..], 0)?,
+        let (expr, expr_consumed) = match &tokens[consumed].token_type {
+            TokenType::LeftBrace => parse_block(source, &tokens[consumed..])?,
+            _ => parse_expression(source, &tokens[consumed..], 0)?,
         };
         consumed += expr_consumed;
 
         // Handle semicolons between expressions inside blocks
-        if consumed < tokens.len() && tokens[consumed] == Token::Semicolon {
+        if consumed < tokens.len() && tokens[consumed].token_type == TokenType::Semicolon {
             consumed += 1;
         } else if consumed < tokens.len()
-            && tokens[consumed] != Token::EOF
-            && tokens[consumed] != Token::RightBrace
+            && tokens[consumed].token_type != TokenType::EOF
+            && tokens[consumed].token_type != TokenType::RightBrace
         {
-            return Err(Error::Parser {
-                message: "Expected ';' after expression".to_string(),
-            });
+            return parser_error(
+                source,
+                "Expected ';' after expression",
+                &tokens[consumed - 1],
+            );
         }
 
         expressions.push(expr);
@@ -153,36 +152,34 @@ fn parse_scope(tokens: &[Token]) -> Result<(Vec<Expr>, usize)> {
     Ok((expressions, consumed))
 }
 
-fn parse_let(tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip 'let'
 
     if consumed >= tokens.len() {
-        return Err(Error::Parser {
-            message: "Expected identifier after 'let'".to_string(),
-        });
+        return parser_error(source, "Expected identifier after 'let'", &tokens[0]);
     }
 
     // Parse the variable name
-    let name = match &tokens[consumed] {
-        Token::Identifier(s) => s.clone(),
+    let name = match &tokens[consumed].token_type {
+        TokenType::Identifier(s) => s.clone(),
         _ => {
-            return Err(Error::Parser {
-                message: "Expected identifier after 'let'".to_string(),
-            })
+            return parser_error(source, "Expected identifier after 'let'", &tokens[consumed]);
         }
     };
     consumed += 1;
 
     // Parse the equals sign
-    if consumed >= tokens.len() || tokens[consumed] != Token::Equal {
-        return Err(Error::Parser {
-            message: "Expected '=' after identifier in let".to_string(),
-        });
+    if consumed >= tokens.len() || tokens[consumed].token_type != TokenType::Equal {
+        return parser_error(
+            source,
+            "Expected '=' after identifier in let",
+            &tokens[tokens.len() - 1],
+        );
     }
     consumed += 1;
 
     // Parse the initializer expression
-    let (initializer, init_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (initializer, init_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += init_consumed;
 
     Ok((
@@ -194,22 +191,24 @@ fn parse_let(tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_block(tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_block(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip '{'
 
     // Handle empty blocks
-    if consumed < tokens.len() && tokens[consumed] == Token::RightBrace {
+    if consumed < tokens.len() && tokens[consumed].token_type == TokenType::RightBrace {
         return Ok((Expr::Block(Vec::new()), consumed + 1));
     }
 
-    let (expressions, scope_consumed) = parse_scope(&tokens[consumed..])?;
+    let (expressions, scope_consumed) = parse_scope(source, &tokens[consumed..])?;
     consumed += scope_consumed;
 
     // Consume the closing brace
-    if consumed >= tokens.len() || tokens[consumed] != Token::RightBrace {
-        return Err(Error::Parser {
-            message: "Unterminated block".to_string(),
-        });
+    if consumed >= tokens.len() || tokens[consumed].token_type != TokenType::RightBrace {
+        return parser_error(
+            source,
+            "Unterminated block",
+            &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+        );
     }
     consumed += 1;
 
@@ -219,7 +218,9 @@ fn parse_block(tokens: &[Token]) -> Result<(Expr, usize)> {
     // Add implicit nil if the last expression was terminated with a semicolon
     if !final_expressions.is_empty() {
         let last_token_pos = consumed - 2; // Position before the closing brace
-        if last_token_pos < tokens.len() && tokens[last_token_pos] == Token::Semicolon {
+        if last_token_pos < tokens.len()
+            && tokens[last_token_pos].token_type == TokenType::Semicolon
+        {
             final_expressions.push(Expr::Literal(Literal::Nil));
         }
     }
@@ -227,23 +228,23 @@ fn parse_block(tokens: &[Token]) -> Result<(Expr, usize)> {
     Ok((Expr::Block(final_expressions), consumed))
 }
 
-fn parse_if(tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_if(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip 'if'
 
-    let (condition, cond_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (condition, cond_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += cond_consumed;
 
-    let (then_branch, then_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (then_branch, then_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += then_consumed;
 
-    let (else_branch, else_consumed) = if consumed < tokens.len() && tokens[consumed] == Token::Else
-    {
-        consumed += 1;
-        let (expr, count) = parse_expression(&tokens[consumed..], 0)?;
-        (expr, count)
-    } else {
-        (Expr::Literal(Literal::Nil), 0)
-    };
+    let (else_branch, else_consumed) =
+        if consumed < tokens.len() && tokens[consumed].token_type == TokenType::Else {
+            consumed += 1;
+            let (expr, count) = parse_expression(source, &tokens[consumed..], 0)?;
+            (expr, count)
+        } else {
+            (Expr::Literal(Literal::Nil), 0)
+        };
 
     Ok((
         Expr::If {
@@ -255,25 +256,25 @@ fn parse_if(tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_while(tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_while(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip 'while'
 
     if consumed >= tokens.len() {
-        return Err(Error::Parser {
-            message: "Expected condition after 'while'".to_string(),
-        });
+        return parser_error(source, "Expected condition after 'while'", &tokens[0]);
     }
 
-    let (condition, cond_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (condition, cond_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += cond_consumed;
 
     if consumed >= tokens.len() {
-        return Err(Error::Parser {
-            message: "Expected body after while condition".to_string(),
-        });
+        return parser_error(
+            source,
+            "Expected body after while condition",
+            &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+        );
     }
 
-    let (body, body_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (body, body_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += body_consumed;
 
     Ok((
@@ -285,58 +286,58 @@ fn parse_while(tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_function(tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_function(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip 'fn'
 
-    if consumed >= tokens.len() || tokens[consumed] != Token::LeftParen {
-        return Err(Error::Parser {
-            message: "Expected '(' after 'fn'".to_string(),
-        });
+    if consumed >= tokens.len() || tokens[consumed].token_type != TokenType::LeftParen {
+        return parser_error(source, "Expected '(' after 'fn'", &tokens[tokens.len() - 1]);
     }
     consumed += 1;
 
     let mut params = Vec::new();
-    while consumed < tokens.len() && tokens[consumed] != Token::RightParen {
+    while consumed < tokens.len() && tokens[consumed].token_type != TokenType::RightParen {
         if !params.is_empty() {
-            if tokens[consumed] != Token::Comma {
-                return Err(Error::Parser {
-                    message: "Expected ',' between parameters".to_string(),
-                });
+            if tokens[consumed].token_type != TokenType::Comma {
+                return parser_error(source, "Expected ',' between parameters", &tokens[consumed]);
             }
             consumed += 1;
 
             if consumed >= tokens.len() {
-                return Err(Error::Parser {
-                    message: "Expected parameter after ','".to_string(),
-                });
+                return parser_error(
+                    source,
+                    "Expected parameter after ','",
+                    &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+                );
             }
         }
 
-        match &tokens[consumed] {
-            Token::Identifier(name) => params.push(name.clone()),
+        match &tokens[consumed].token_type {
+            TokenType::Identifier(name) => params.push(name.clone()),
             _ => {
-                return Err(Error::Parser {
-                    message: "Expected parameter name".to_string(),
-                })
+                return parser_error(source, "Expected parameter name", &tokens[consumed]);
             }
         }
         consumed += 1;
     }
 
     if consumed >= tokens.len() {
-        return Err(Error::Parser {
-            message: "Unterminated function parameters".to_string(),
-        });
+        return parser_error(
+            source,
+            "Unterminated function parameters",
+            &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+        );
     }
     consumed += 1; // Skip ')'
 
     if consumed >= tokens.len() {
-        return Err(Error::Parser {
-            message: "Expected function body".to_string(),
-        });
+        return parser_error(
+            source,
+            "Expected function body",
+            &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+        );
     }
 
-    let (body, body_consumed) = parse_expression(&tokens[consumed..], 0)?;
+    let (body, body_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
     consumed += body_consumed;
 
     Ok((
@@ -348,8 +349,53 @@ fn parse_function(tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, usize)> {
-    let (mut expr, mut consumed) = parse_prefix(tokens)?;
+fn parse_list(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+    let mut consumed = 1; // Skip '['
+    let mut elements = Vec::new();
+
+    // Handle empty list case
+    if consumed < tokens.len() && tokens[consumed].token_type == TokenType::RightSquare {
+        return Ok((Expr::List(elements), consumed + 1));
+    }
+
+    // Parse first element
+    let (first_elem, first_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
+    elements.push(first_elem);
+    consumed += first_consumed;
+
+    // Parse remaining elements
+    while consumed < tokens.len() && tokens[consumed].token_type == TokenType::Comma {
+        consumed += 1; // Skip comma
+
+        // Allow trailing comma
+        if tokens[consumed].token_type == TokenType::RightSquare {
+            break;
+        }
+
+        let (elem, elem_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
+        elements.push(elem);
+        consumed += elem_consumed;
+    }
+
+    // Expect closing bracket
+    if consumed >= tokens.len() || tokens[consumed].token_type != TokenType::RightSquare {
+        return parser_error(
+            source,
+            "Expected ']' after list elements",
+            &tokens[tokens.len() - 1],
+        );
+    }
+    consumed += 1; // Skip ']'
+
+    Ok((Expr::List(elements), consumed))
+}
+
+fn parse_operator_precedence(
+    source: &[u8],
+    tokens: &[Token],
+    precedence: u8,
+) -> Result<(Expr, usize)> {
+    let (mut expr, mut consumed) = parse_prefix(source, tokens)?;
 
     loop {
         if consumed >= tokens.len() {
@@ -357,28 +403,32 @@ fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, 
         }
 
         // Handle function calls with high precedence
-        if tokens[consumed] == Token::LeftParen {
+        if tokens[consumed].token_type == TokenType::LeftParen {
             consumed += 1;
             let mut args = Vec::new();
 
-            while consumed < tokens.len() && tokens[consumed] != Token::RightParen {
+            while consumed < tokens.len() && tokens[consumed].token_type != TokenType::RightParen {
                 if !args.is_empty() {
-                    if tokens[consumed] != Token::Comma {
-                        return Err(Error::Parser {
-                            message: "Expected ',' between arguments".to_string(),
-                        });
+                    if tokens[consumed].token_type != TokenType::Comma {
+                        return parser_error(
+                            source,
+                            "Expected ',' between arguments",
+                            &tokens[consumed],
+                        );
                     }
                     consumed += 1;
                 }
-                let (arg, arg_consumed) = parse_expression(&tokens[consumed..], 0)?;
+                let (arg, arg_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
                 args.push(arg);
                 consumed += arg_consumed;
             }
 
             if consumed >= tokens.len() {
-                return Err(Error::Parser {
-                    message: "Expected ')' after arguments".to_string(),
-                });
+                return parser_error(
+                    source,
+                    "Expected ')' after arguments",
+                    &tokens[consumed.saturating_sub(1).min(tokens.len() - 1)],
+                );
             }
             consumed += 1; // consume the right paren
 
@@ -390,7 +440,7 @@ fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, 
         }
 
         // Handle assignment
-        if tokens[consumed] == Token::Equal {
+        if tokens[consumed].token_type == TokenType::Equal {
             if precedence > 1 {
                 // Assignment has lowest precedence
                 break;
@@ -399,14 +449,16 @@ fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, 
             let name = match expr {
                 Expr::Variable(ref name) => name.clone(),
                 _ => {
-                    return Err(Error::Parser {
-                        message: "Invalid assignment target".to_string(),
-                    })
+                    return parser_error(
+                        source,
+                        "Invalid assignment target",
+                        &tokens[consumed - 1],
+                    );
                 }
             };
 
             consumed += 1;
-            let (value, value_consumed) = parse_expression(&tokens[consumed..], 1)?;
+            let (value, value_consumed) = parse_expression(source, &tokens[consumed..], 1)?;
             consumed += value_consumed;
 
             expr = Expr::Assign {
@@ -416,31 +468,31 @@ fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, 
             continue;
         }
 
-        let op_precedence = get_precedence(&tokens[consumed]);
+        let op_precedence = get_precedence(&tokens[consumed].token_type);
         if precedence >= op_precedence {
             break;
         }
 
-        let operator = match &tokens[consumed] {
-            Token::Plus => BinaryOp::Add,
-            Token::Minus => BinaryOp::Subtract,
-            Token::Star => BinaryOp::Multiply,
-            Token::Slash => BinaryOp::Divide,
-            Token::Percent => BinaryOp::Modulo,
-            Token::EqualEqual => BinaryOp::Equal,
-            Token::BangEqual => BinaryOp::NotEqual,
-            Token::Less => BinaryOp::Less,
-            Token::LessEqual => BinaryOp::LessEqual,
-            Token::Greater => BinaryOp::Greater,
-            Token::GreaterEqual => BinaryOp::GreaterEqual,
-            Token::Concat => BinaryOp::Concat,
-            Token::And => BinaryOp::And,
-            Token::Or => BinaryOp::Or,
+        let operator = match &tokens[consumed].token_type {
+            TokenType::Plus => BinaryOp::Add,
+            TokenType::Minus => BinaryOp::Subtract,
+            TokenType::Star => BinaryOp::Multiply,
+            TokenType::Slash => BinaryOp::Divide,
+            TokenType::Percent => BinaryOp::Modulo,
+            TokenType::EqualEqual => BinaryOp::Equal,
+            TokenType::BangEqual => BinaryOp::NotEqual,
+            TokenType::Less => BinaryOp::Less,
+            TokenType::LessEqual => BinaryOp::LessEqual,
+            TokenType::Greater => BinaryOp::Greater,
+            TokenType::GreaterEqual => BinaryOp::GreaterEqual,
+            TokenType::Concat => BinaryOp::Concat,
+            TokenType::And => BinaryOp::And,
+            TokenType::Or => BinaryOp::Or,
             _ => break,
         };
         consumed += 1;
 
-        let (right, right_consumed) = parse_expression(&tokens[consumed..], op_precedence)?;
+        let (right, right_consumed) = parse_expression(source, &tokens[consumed..], op_precedence)?;
         consumed += right_consumed;
 
         expr = Expr::Binary {
@@ -453,25 +505,26 @@ fn parse_operator_precedence(tokens: &[Token], precedence: u8) -> Result<(Expr, 
     Ok((expr, consumed))
 }
 
-fn parse_prefix(tokens: &[Token]) -> Result<(Expr, usize)> {
-    match &tokens[0] {
-        Token::Number(n) => Ok((Expr::Literal(Literal::Number(*n)), 1)),
-        Token::String(s) => Ok((Expr::Literal(Literal::String(s.clone())), 1)),
-        Token::True => Ok((Expr::Literal(Literal::Boolean(true)), 1)),
-        Token::False => Ok((Expr::Literal(Literal::Boolean(false)), 1)),
-        Token::Nil => Ok((Expr::Literal(Literal::Nil), 1)),
-        Token::Identifier(name) => Ok((Expr::Variable(name.clone()), 1)),
-        Token::LeftParen => {
-            let (expr, consumed) = parse_expression(&tokens[1..], 0)?;
-            if consumed + 1 >= tokens.len() || tokens[consumed + 1] != Token::RightParen {
-                return Err(Error::Parser {
-                    message: "Expected ')'".to_string(),
-                });
+fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+    match &tokens[0].token_type {
+        TokenType::Number(n) => Ok((Expr::Literal(Literal::Number(*n)), 1)),
+        TokenType::String(s) => Ok((Expr::Literal(Literal::String(s.clone())), 1)),
+        TokenType::True => Ok((Expr::Literal(Literal::Boolean(true)), 1)),
+        TokenType::False => Ok((Expr::Literal(Literal::Boolean(false)), 1)),
+        TokenType::Nil => Ok((Expr::Literal(Literal::Nil), 1)),
+        TokenType::Identifier(name) => Ok((Expr::Variable(name.clone()), 1)),
+        TokenType::LeftSquare => parse_list(source, tokens),
+        TokenType::LeftParen => {
+            let (expr, consumed) = parse_expression(source, &tokens[1..], 0)?;
+            if consumed + 1 >= tokens.len()
+                || tokens[consumed + 1].token_type != TokenType::RightParen
+            {
+                return parser_error(source, "Expected ')'", &tokens[consumed + 1]);
             }
             Ok((Expr::Grouping(Box::new(expr)), consumed + 2))
         }
-        Token::Minus => {
-            let (right, consumed) = parse_expression(&tokens[1..], 8)?;
+        TokenType::Minus => {
+            let (right, consumed) = parse_expression(source, &tokens[1..], 8)?;
             Ok((
                 Expr::Unary {
                     operator: UnaryOp::Negate,
@@ -480,8 +533,8 @@ fn parse_prefix(tokens: &[Token]) -> Result<(Expr, usize)> {
                 consumed + 1,
             ))
         }
-        Token::Bang => {
-            let (right, consumed) = parse_expression(&tokens[1..], 8)?;
+        TokenType::Bang => {
+            let (right, consumed) = parse_expression(source, &tokens[1..], 8)?;
             Ok((
                 Expr::Unary {
                     operator: UnaryOp::Not,
@@ -490,26 +543,24 @@ fn parse_prefix(tokens: &[Token]) -> Result<(Expr, usize)> {
                 consumed + 1,
             ))
         }
-        _ => Err(Error::Parser {
-            message: "Expected expression".to_string(),
-        }),
+        _ => parser_error(source, "Expected expression", &tokens[0]),
     }
 }
 
-fn get_precedence(token: &Token) -> u8 {
+fn get_precedence(token: &TokenType) -> u8 {
     match token {
-        Token::Star | Token::Slash | Token::Percent => 7,
-        Token::Plus | Token::Minus => 6,
-        Token::Concat => 5,
-        Token::EqualEqual
-        | Token::BangEqual
-        | Token::Less
-        | Token::LessEqual
-        | Token::Greater
-        | Token::GreaterEqual => 4,
-        Token::And => 3,
-        Token::Or => 2,
-        Token::Equal => 1,
+        TokenType::Star | TokenType::Slash | TokenType::Percent => 7,
+        TokenType::Plus | TokenType::Minus => 6,
+        TokenType::Concat => 5,
+        TokenType::EqualEqual
+        | TokenType::BangEqual
+        | TokenType::Less
+        | TokenType::LessEqual
+        | TokenType::Greater
+        | TokenType::GreaterEqual => 4,
+        TokenType::And => 3,
+        TokenType::Or => 2,
+        TokenType::Equal => 1,
         _ => 0,
     }
 }
@@ -521,8 +572,9 @@ mod tests {
 
     // Helper function to tokenize and parse a string
     fn parse_str(input: &str) -> Result<Expr> {
-        let tokens = tokenize(input.as_bytes())?;
-        parse(&tokens)
+        let source = input.as_bytes();
+        let tokens = tokenize(source)?;
+        parse(source, &tokens)
     }
 
     #[test]
@@ -595,6 +647,67 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_literals() -> Result<()> {
+        // Test empty list
+        if let Expr::Block(exprs) = parse_str("[];")? {
+            assert_eq!(exprs.len(), 1);
+            assert!(matches!(&exprs[0], Expr::List(elements) if elements.is_empty()));
+        }
+
+        // Test simple list
+        if let Expr::Block(exprs) = parse_str("[1, 2, 3];")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::List(elements) = &exprs[0] {
+                assert_eq!(elements.len(), 3);
+                assert!(matches!(&elements[0], Expr::Literal(Literal::Number(1.0))));
+                assert!(matches!(&elements[1], Expr::Literal(Literal::Number(2.0))));
+                assert!(matches!(&elements[2], Expr::Literal(Literal::Number(3.0))));
+            }
+        }
+
+        // Test mixed types
+        if let Expr::Block(exprs) = parse_str("[1, \"hello\", true];")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::List(elements) = &exprs[0] {
+                assert_eq!(elements.len(), 3);
+                assert!(matches!(&elements[0], Expr::Literal(Literal::Number(1.0))));
+                assert!(matches!(&elements[1], Expr::Literal(Literal::String(s)) if s == "hello"));
+                assert!(matches!(
+                    &elements[2],
+                    Expr::Literal(Literal::Boolean(true))
+                ));
+            }
+        }
+
+        // Test nested lists
+        if let Expr::Block(exprs) = parse_str("[[1, 2], [3, 4]];")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::List(elements) = &exprs[0] {
+                assert_eq!(elements.len(), 2);
+                for inner in elements {
+                    assert!(matches!(inner, Expr::List(_)));
+                }
+            }
+        }
+
+        // Test trailing comma
+        if let Expr::Block(exprs) = parse_str("[1, 2, 3,];")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::List(elements) = &exprs[0] {
+                assert_eq!(elements.len(), 3);
+            }
+        }
+
+        // Test error cases
+        assert!(parse_str("[").is_err()); // Unclosed list
+        assert!(parse_str("[,]").is_err()); // Missing element after comma
+        assert!(parse_str("[1 2]").is_err()); // Missing comma
+        assert!(parse_str("[1, 2").is_err()); // Unclosed list
+
         Ok(())
     }
 
