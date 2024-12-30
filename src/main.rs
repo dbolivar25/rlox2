@@ -6,6 +6,7 @@ use reedline::{DefaultHinter, FileBackedHistory, Reedline, Signal};
 use rlox2::{
     cli::{Args, Commands},
     error::Result,
+    extensions::ResultExtensions,
     parser::parse,
     repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
     tokenizer::tokenize,
@@ -37,49 +38,45 @@ fn check_file(file: PathBuf) -> Result<()> {
 }
 
 fn run_repl() -> Result<()> {
-    let history_file = home_dir()
-        .expect("Could not find home directory")
-        .join(".rlox_history");
-
-    let history = Box::new(
-        FileBackedHistory::with_file(20, history_file)
-            .expect("Error configuring history with file"),
-    );
     let mut line_editor = Reedline::create()
         .with_hinter(Box::new(
             DefaultHinter::default().with_style(Style::new().italic().fg(Color::LightGray)),
         ))
         .with_highlighter(Box::new(SyntaxHighlighter))
-        .with_validator(Box::new(REPLValidator))
-        .with_history(history);
+        .with_validator(Box::new(REPLValidator));
+
+    // Add file-backed history if possible
+    if let Some(history) = home_dir()
+        .map(|home| home.join(".rlox_history"))
+        .and_then(|path| FileBackedHistory::with_file(20, path).ok())
+        .map(Box::new)
+    {
+        line_editor = line_editor.with_history(history);
+    } else {
+        eprintln!("NOTE: Failed to load history. Persistence is now disabled.")
+    }
+
     let prompt = REPLPrompt;
 
     loop {
-        match line_editor.read_line(&prompt) {
-            Ok(Signal::Success(buffer)) => match tokenize(buffer.as_bytes()) {
-                Ok(tokens) => match parse(&tokens) {
-                    Ok(expression) => {
-                        dbg!(expression);
-                        continue;
-                    }
-                    Err(parse_error) => {
+        match line_editor.read_line(&prompt)? {
+            Signal::Success(buffer) => {
+                Result::pure(buffer)
+                    .and_then(|buffer| tokenize(buffer.as_bytes()))
+                    .inspect(|tokens| {
                         dbg!(tokens);
-                        dbg!(parse_error);
-                        continue;
-                    }
-                },
-                Err(tokenize_error) => {
-                    dbg!(buffer);
-                    dbg!(tokenize_error);
-                    continue;
-                }
-            },
-            Ok(Signal::CtrlD | Signal::CtrlC) => {
-                return Ok(());
+                    })
+                    .and_then(|tokens| parse(&tokens))
+                    .inspect(|ast| {
+                        dbg!(ast);
+                    })
+                    .inspect_err(|err| {
+                        dbg!(err);
+                    })
+                    .ok();
             }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return Ok(());
+            Signal::CtrlD | Signal::CtrlC => {
+                break Ok(());
             }
         }
     }
