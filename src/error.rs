@@ -1,3 +1,4 @@
+use crate::extensions::ResultExtensions;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -15,3 +16,9 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl<T, Error> ResultExtensions<T, Error> for std::result::Result<T, Error> {
+    fn pure(item: T) -> std::result::Result<T, Error> {
+        Ok(item)
+    }
+}
