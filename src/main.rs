@@ -7,7 +7,7 @@ use rlox2::{
     cli::{Args, Commands},
     error::Result,
     extensions::ResultExtensions,
-    parser2::parse,
+    parser::parse,
     repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
     tokenizer::tokenize,
 };
