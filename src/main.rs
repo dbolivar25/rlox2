@@ -15,9 +15,7 @@ use std::{fs, path::PathBuf};
 
 fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
     let source = fs::read(file)?;
-
     let tokens = tokenize(&source)?;
-
     let ast = parse(&source, &tokens)?;
     dbg!(&ast);
 

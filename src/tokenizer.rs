@@ -103,7 +103,7 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
             0,
             Token {
                 token_type: TokenType::EOF,
-                byte_span: offset..offset,
+                byte_span: offset.saturating_sub(1)..offset.saturating_sub(1),
             },
         ));
     }
@@ -118,7 +118,8 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
             whitespace,
             Token {
                 token_type: TokenType::EOF,
-                byte_span: (offset + whitespace)..(offset + whitespace),
+                byte_span: (offset + whitespace.saturating_sub(1))
+                    ..(offset + whitespace.saturating_sub(1)),
             },
         ));
     }
@@ -152,7 +153,8 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
             comment_end,
             Token {
                 token_type: TokenType::EOF,
-                byte_span: (offset + comment_end)..(offset + comment_end),
+                byte_span: (offset + comment_end.saturating_sub(1))
+                    ..(offset + comment_end.saturating_sub(1)),
             },
         ));
     }
