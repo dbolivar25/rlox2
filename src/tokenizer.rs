@@ -232,7 +232,9 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
         return Ok((
             str_end + 1,
             Token {
-                token_type: TokenType::String(bytes[str_start..str_end].escape_ascii().to_string()),
+                token_type: TokenType::String(
+                    String::from_utf8_lossy(&bytes[str_start..str_end]).to_string(),
+                ),
                 byte_span: token_start..(token_start + (str_end - cursor) + 1),
             },
         ));
@@ -257,7 +259,9 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
         return Ok((
             str_end + 1,
             Token {
-                token_type: TokenType::String(bytes[str_start..str_end].escape_ascii().to_string()),
+                token_type: TokenType::String(
+                    String::from_utf8_lossy(&bytes[str_start..str_end]).to_string(),
+                ),
                 byte_span: token_start..(token_start + (str_end - cursor) + 1),
             },
         ));
