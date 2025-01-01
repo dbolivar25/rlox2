@@ -261,18 +261,15 @@ fn next_token(source: &[u8], offset: usize) -> Result<(usize, Token)> {
             );
         }
 
-        let raw_str = String::from_utf8_lossy(&bytes[cursor..=str_end]);
-
-        return match unescape(&raw_str) {
-            Ok(unescaped) => Ok((
-                str_end + 1,
-                Token {
-                    token_type: TokenType::String(unescaped),
-                    byte_span: token_start..(token_start + (str_end - cursor) + 1),
-                },
-            )),
-            Err(_) => tokenizer_error(source, "Invalid escape sequence in string", token_start),
-        };
+        return Ok((
+            str_end + 1,
+            Token {
+                token_type: TokenType::String(
+                    String::from_utf8_lossy(&bytes[str_start..str_end]).to_string(),
+                ),
+                byte_span: token_start..(token_start + (str_end - cursor) + 1),
+            },
+        ));
     }
 
     if bytes[cursor].is_ascii_digit() {
