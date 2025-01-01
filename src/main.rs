@@ -6,7 +6,6 @@ use reedline::{DefaultHinter, FileBackedHistory, Reedline, Signal};
 use rlox2::{
     cli::{Args, Commands},
     error::Result,
-    extensions::ResultExtensions,
     parser::parse,
     repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
     tokenizer::tokenize,
@@ -59,8 +58,7 @@ fn run_repl() -> Result<()> {
         match line_editor.read_line(&prompt)? {
             Signal::Success(buffer) => {
                 let source = buffer.as_bytes();
-                Result::pure(())
-                    .and_then(|_| tokenize(source))
+                tokenize(source)
                     .and_then(|tokens| parse(source, &tokens))
                     .inspect(|ast| {
                         dbg!(ast);
