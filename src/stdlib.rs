@@ -2,6 +2,7 @@ use crate::environment::Environment;
 use crate::error::Error;
 use crate::runtime::{Callable, Value};
 use rand::Rng;
+use std::io::{self, Write};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,6 +48,50 @@ pub fn create_standard_env() -> Environment {
             })?
         );
         Ok(Value::Nil)
+    });
+
+    define_builtin!("input", 1, |args| {
+        let prompt = args.first().ok_or_else(|| Error::Runtime {
+            message: "input requires 1 argument".to_string(),
+            line: 0,
+            column: 0,
+            context: String::new(),
+        })?;
+
+        // Print the prompt and flush stdout to ensure it appears before input
+        match prompt {
+            Value::String(s) => {
+                print!("{}", s);
+                io::stdout().flush().map_err(|e| Error::Runtime {
+                    message: format!("IO error: {}", e),
+                    line: 0,
+                    column: 0,
+                    context: String::new(),
+                })?;
+            }
+            _ => {
+                return Err(Error::Runtime {
+                    message: "input prompt must be a string".to_string(),
+                    line: 0,
+                    column: 0,
+                    context: String::new(),
+                })
+            }
+        }
+
+        // Read user input
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| Error::Runtime {
+                message: format!("Failed to read input: {}", e),
+                line: 0,
+                column: 0,
+                context: String::new(),
+            })?;
+
+        // Trim the trailing newline and return
+        Ok(Value::String(input.trim_end().to_string()))
     });
 
     // Type functions
@@ -170,6 +215,45 @@ pub fn create_standard_env() -> Environment {
                     })
                 } else {
                     Ok(Value::Number(rand::thread_rng().gen_range(*min..*max)))
+                }
+            }
+            _ => Err(Error::Runtime {
+                message: "random_range requires two numbers".to_string(),
+                line: 0,
+                column: 0,
+                context: String::new(),
+            }),
+        }
+    });
+
+    define_builtin!("random_int_range", 2, |args| {
+        let min = args.first().ok_or_else(|| Error::Runtime {
+            message: "random_range requires 2 arguments".to_string(),
+            line: 0,
+            column: 0,
+            context: String::new(),
+        })?;
+
+        let max = args.get(1).ok_or_else(|| Error::Runtime {
+            message: "random_range requires 2 arguments".to_string(),
+            line: 0,
+            column: 0,
+            context: String::new(),
+        })?;
+
+        match (min, max) {
+            (Value::Number(min), Value::Number(max)) => {
+                if min >= max {
+                    Err(Error::Runtime {
+                        message: "random_range: min must be less than max".to_string(),
+                        line: 0,
+                        column: 0,
+                        context: String::new(),
+                    })
+                } else {
+                    Ok(Value::Number(
+                        rand::thread_rng().gen_range(*min..*max).trunc(),
+                    ))
                 }
             }
             _ => Err(Error::Runtime {
