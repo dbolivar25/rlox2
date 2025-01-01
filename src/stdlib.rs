@@ -1,5 +1,5 @@
 use crate::environment::Environment;
-use crate::error::{Error, Result};
+use crate::error::Error;
 use crate::runtime::{Callable, Value};
 use rand::Rng;
 use std::rc::Rc;
@@ -585,6 +585,7 @@ pub fn create_standard_env() -> Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Result;
 
     #[test]
     fn test_stdlib_functions() -> Result<()> {

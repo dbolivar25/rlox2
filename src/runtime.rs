@@ -141,10 +141,51 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
             right,
         } => evaluate_binary(left, operator, right, env),
         Expr::Grouping(expr) => evaluate(expr, env),
-        Expr::Let { name, initializer } => {
-            let value = evaluate(initializer, env)?;
-            env.insert(name.clone(), value.clone());
-            Ok(value)
+        Expr::Let {
+            name,
+            initializer,
+            recursive,
+        } => {
+            if *recursive {
+                // For recursive bindings, we need to:
+                // 1. Create placeholder in current scope
+                // 2. Evaluate initializer with access to placeholder
+                // 3. Update the binding with the real value
+                match evaluate(initializer, env)? {
+                    Value::Callable(Callable::Function {
+                        params,
+                        body,
+                        closure,
+                    }) => {
+                        // Create new closure that includes the function itself
+                        let mut func_env = closure.clone();
+                        let func = Value::Callable(Callable::Function {
+                            params: params.clone(),
+                            body: body.clone(),
+                            closure: func_env.clone(),
+                        });
+
+                        // Add the function to its own environment
+                        func_env.insert(name.clone(), func.clone());
+
+                        // Add to current environment
+                        env.insert(name.clone(), func.clone());
+                        Ok(func)
+                    }
+                    _ => Err(Error::Runtime {
+                        message: "rec keyword can only be used with function definitions"
+                            .to_string(),
+                        line: 0,
+                        column: 0,
+                        context: String::new(),
+                    }),
+                }
+            } else {
+                // Non-recursive binding behaves as before
+                let value = evaluate(initializer, env)?;
+                env.insert(name.clone(), value.clone());
+                Ok(value)
+            }
         }
         Expr::Variable(name) => env.get(name).clone().ok_or_else(|| Error::Runtime {
             message: format!("Undefined variable '{}'", name),
@@ -588,7 +629,7 @@ mod tests {
 
         // Test factorial function
         let source = b"
-            let factorial = fn(n) {
+            let rec factorial = fn(n) {
                 if n <= 1 {
                     1
                 } else {
@@ -712,7 +753,7 @@ mod tests {
 
         // Test recursive function
         let source = b"
-            let fib = fn(n) {
+            let rec fib = fn(n) {
                 if n <= 1 {
                     n
                 } else {

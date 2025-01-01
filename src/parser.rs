@@ -19,6 +19,7 @@ pub enum Expr {
     Let {
         name: String,
         initializer: Box<Expr>,
+        recursive: bool,
     },
     Block(Vec<Expr>),
     If {
@@ -433,6 +434,14 @@ fn get_precedence(token: &TokenType) -> u8 {
 fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     let mut consumed = 1; // Skip 'let'
 
+    // Check for 'rec' keyword
+    let recursive = if consumed < tokens.len() && tokens[consumed].token_type == TokenType::Rec {
+        consumed += 1;
+        true
+    } else {
+        false
+    };
+
     // Parse identifier - check bounds first
     if consumed >= tokens.len() {
         return parser_error(
@@ -467,6 +476,7 @@ fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
         Expr::Let {
             name,
             initializer: Box::new(initializer),
+            recursive,
         },
         consumed,
     ))
