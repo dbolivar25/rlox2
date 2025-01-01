@@ -1,4 +1,4 @@
-use crate::{extensions::ResultExtensions, tokenizer::Token};
+use crate::tokenizer::Token;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -109,10 +109,4 @@ fn format_error_pointer(column: usize) -> String {
     pointer.push('^');
 
     pointer
-}
-
-impl<T, Error> ResultExtensions<T, Error> for std::result::Result<T, Error> {
-    fn pure(item: T) -> std::result::Result<T, Error> {
-        Ok(item)
-    }
 }
