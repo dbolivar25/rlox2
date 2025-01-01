@@ -468,6 +468,9 @@ fn evaluate_binary(
         },
         BinaryOp::Concat => match (&left_val, &right_val) {
             (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            (Value::List(a), Value::List(b)) => {
+                Ok(Value::List(a.iter().chain(b.iter()).cloned().collect()))
+            }
             _ => Err(Error::Runtime {
                 message: "Operands must be strings".to_string(),
                 line: 0,
