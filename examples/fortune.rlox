@@ -12,21 +12,16 @@ let get_prediction = fn(num) {
   }
 };
 
-let get_rand = fn() {
-  rand_int_range(1, 5)
-};
-
 let get_random_prediction = fn() {
-  get_prediction(get_rand())
+  get_prediction(random_int_range(1, 5))
 };
 
 let main = fn() {
   println("Ask the magic ball a question:");
-  print("|> ");
-  let input = read_line();
+  let line = input("|> ");
 
-  while input != "quit" {
-    if input == "" {
+  while line != "quit" {
+    if line == "" {
       println("You must ask a question.");
     } else {
       println(get_random_prediction());
@@ -34,13 +29,11 @@ let main = fn() {
 
     println("");
     println("Ask the magic ball a question:");
-    print("|> ");
-
-    input = read_line();
+    line = input("|> ");
   };
 
   println("");
   println("Thanks for playing!");
 };
 
-main()
+main();
