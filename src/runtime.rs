@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Value {
     Number(f64),
     String(String),
@@ -14,39 +14,6 @@ pub enum Value {
     List(Vec<Value>),
     Callable(Callable),
     Nil,
-}
-
-#[derive(Clone)]
-pub enum Callable {
-    Function {
-        params: Vec<String>,
-        body: Box<Expr>,
-        closure: Environment,
-    },
-    BuiltIn {
-        name: String,
-        arity: usize,
-        func: Rc<dyn Fn(Vec<Value>) -> Result<Value>>,
-    },
-}
-
-// Implement Debug manually for Callable
-impl Debug for Callable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Callable::Function { params, body, .. } => f
-                .debug_struct("Function")
-                .field("params", params)
-                .field("body", body)
-                .finish(),
-            Callable::BuiltIn { name, arity, .. } => f
-                .debug_struct("BuiltIn")
-                .field("name", name)
-                .field("arity", arity)
-                .field("func", &"<built-in function>")
-                .finish(),
-        }
-    }
 }
 
 impl PartialEq for Value {
@@ -96,11 +63,35 @@ impl Display for Value {
     }
 }
 
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Value::String(s) = self {
+            write!(f, "\"{}\"", s)
+        } else {
+            write!(f, "{}", self)
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum Callable {
+    Function {
+        params: Vec<String>,
+        body: Box<Expr>,
+        closure: Environment,
+    },
+    BuiltIn {
+        name: String,
+        arity: usize,
+        func: Rc<dyn Fn(Vec<Value>) -> Result<Value>>,
+    },
+}
+
 impl Display for Callable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Callable::Function { params, .. } => {
-                write!(f, "<fn({})>", params.join(", "))
+                write!(f, "fn({})", params.join(", "))
             }
             Callable::BuiltIn { name, .. } => {
                 write!(f, "<built-in {}>", name)
@@ -109,27 +100,19 @@ impl Display for Callable {
     }
 }
 
-// Add PartialEq implementation for Callable if needed
-impl PartialEq for Callable {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                Callable::Function {
-                    params: p1,
-                    body: b1,
-                    ..
-                },
-                Callable::Function {
-                    params: p2,
-                    body: b2,
-                    ..
-                },
-            ) => p1 == p2 && b1 == b2,
-            (Callable::BuiltIn { name: n1, .. }, Callable::BuiltIn { name: n2, .. }) => n1 == n2,
-            _ => false,
-        }
+impl Debug for Callable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
+
+impl PartialEq for Callable {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+impl Eq for Callable {}
 
 pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
     match expr {
