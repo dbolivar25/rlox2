@@ -3,7 +3,7 @@ use crate::{
     tokenizer::{Token, TokenType},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Literal(Literal),
     Unary {
@@ -41,26 +41,44 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
     Boolean(bool),
-    Nil,
     Function {
         params: Vec<String>,
         body: Box<Expr>,
     },
     List(Vec<Expr>),
+    Nil,
 }
 
-#[derive(Debug)]
+impl PartialEq for Literal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Literal::Number(a), Literal::Number(b)) => {
+                const EPSILON: f64 = 1e-10;
+                (a - b).abs() < EPSILON
+            }
+            (Literal::String(a), Literal::String(b)) => a == b,
+            (Literal::Boolean(a), Literal::Boolean(b)) => a == b,
+            (Literal::Function { .. }, Literal::Function { .. }) => false,
+            (Literal::List(a), Literal::List(b)) => a == b,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+}
+
+impl Eq for Literal {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnaryOp {
     Negate,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Subtract,
@@ -252,7 +270,52 @@ fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
             }
             consumed += 1; // Skip ')'
 
-            Ok((Expr::Grouping(Box::new(expr)), consumed))
+            // Check for function call
+            if consumed < tokens.len() && tokens[consumed].token_type == TokenType::LeftParen {
+                consumed += 1;
+                let mut arguments = Vec::new();
+
+                // Parse arguments
+                while consumed < tokens.len()
+                    && tokens[consumed].token_type != TokenType::RightParen
+                {
+                    if !arguments.is_empty() {
+                        if tokens[consumed].token_type != TokenType::Comma {
+                            return parser_error(
+                                source,
+                                "Expected ',' between arguments",
+                                &tokens[consumed],
+                            );
+                        }
+                        consumed += 1;
+                    }
+
+                    let (arg, arg_consumed) = parse_expression(source, &tokens[consumed..], 0)?;
+                    arguments.push(arg);
+                    consumed += arg_consumed;
+                }
+
+                // Expect closing parenthesis
+                if consumed >= tokens.len() || tokens[consumed].token_type != TokenType::RightParen
+                {
+                    return parser_error(
+                        source,
+                        "Expected ')' after arguments",
+                        &tokens[consumed.saturating_sub(1)],
+                    );
+                }
+                consumed += 1;
+
+                Ok((
+                    Expr::Call {
+                        callee: Box::new(Expr::Grouping(Box::new(expr))),
+                        arguments,
+                    },
+                    consumed,
+                ))
+            } else {
+                Ok((Expr::Grouping(Box::new(expr)), consumed))
+            }
         }
         TokenType::LeftBrace => {
             let mut consumed = 1; // Skip '{'
@@ -835,6 +898,82 @@ mod tests {
             assert!(matches!(exprs[0], Expr::Let { .. }));
             assert!(matches!(exprs[1], Expr::Call { .. }));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_iife() -> Result<()> {
+        // Test expression-body IIFE
+        if let Expr::Block(exprs) = parse_str("(fn() 42)()")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, Expr::Grouping(_)));
+                assert!(arguments.is_empty());
+
+                if let Expr::Grouping(inner) = &**callee {
+                    assert!(matches!(**inner, Expr::Literal(Literal::Function { .. })));
+                }
+            } else {
+                panic!("Expected Call expression");
+            }
+        }
+
+        // Test block-body IIFE
+        if let Expr::Block(exprs) = parse_str("(fn() { 42 })()")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, Expr::Grouping(_)));
+                assert!(arguments.is_empty());
+
+                if let Expr::Grouping(inner) = &**callee {
+                    assert!(matches!(**inner, Expr::Literal(Literal::Function { .. })));
+                }
+            } else {
+                panic!("Expected Call expression");
+            }
+        }
+
+        // Test IIFE with arguments
+        if let Expr::Block(exprs) = parse_str("(fn(x) x * 2)(42)")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, Expr::Grouping(_)));
+                assert_eq!(arguments.len(), 1);
+                assert!(matches!(
+                    &arguments[0],
+                    Expr::Literal(Literal::Number(42.0))
+                ));
+            }
+        }
+
+        // Test IIFE in let binding
+        if let Expr::Block(exprs) = parse_str("let f = (fn() 42)()")? {
+            assert_eq!(exprs.len(), 1);
+            if let Expr::Let { initializer, .. } = &exprs[0] {
+                assert!(matches!(**initializer, Expr::Call { .. }));
+            }
+        }
+
+        // Verify that we still handle regular grouped expressions
+        if let Expr::Block(exprs) = parse_str("(42)")? {
+            assert_eq!(exprs.len(), 1);
+            assert!(matches!(exprs[0], Expr::Grouping(_)));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iife_error_cases() -> Result<()> {
+        // Missing closing paren for function
+        assert!(parse_str("(fn() 42()").is_err());
+
+        // Missing closing paren for call
+        assert!(parse_str("(fn() 42)(").is_err());
+
+        // Missing opening paren
+        assert!(parse_str("fn() 42)()").is_err());
+
         Ok(())
     }
 
