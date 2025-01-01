@@ -27,13 +27,11 @@ let main = fn() {
       println(get_random_prediction());
     };
 
-    println("");
-    println("Ask the magic ball a question:");
+    println("\nAsk the magic ball a question:");
     line = input("|> ");
   };
 
-  println("");
-  println("Thanks for playing!");
+  println("\nThanks for playing!");
 };
 
 main();
