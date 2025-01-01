@@ -8,7 +8,7 @@ use rlox2::{
     error::Result,
     parser::parse,
     repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
-    runtime::evaluate,
+    runtime::{evaluate, Value},
     stdlib::create_standard_env,
     tokenizer::tokenize,
 };
@@ -16,25 +16,35 @@ use std::{fs, path::PathBuf};
 
 fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
     let source = fs::read(file)?;
+    debug!("source: {:?}", &source);
+
     let tokens = tokenize(&source)?;
+    debug!("tokens: {:?}", &tokens);
+
     let ast = parse(&source, &tokens)?;
+    debug!("ast: {:?}", &ast);
 
     let mut environment = create_standard_env();
     let evaluation = evaluate(&ast, &mut environment)?;
+    debug!("evaluation: {:?}", evaluation);
 
-    debug!("evaluation: {}", evaluation);
+    if let Value::Nil = evaluation {
+    } else {
+        println!("{:?}", evaluation);
+    }
 
     Ok(())
 }
 
 fn check_file(file: PathBuf) -> Result<()> {
     let source = fs::read(file)?;
+    debug!("source: {:?}", &source);
 
     let tokens = tokenize(&source)?;
-    dbg!(&tokens);
+    debug!("tokens: {:?}", &tokens);
 
     let ast = parse(&source, &tokens)?;
-    dbg!(&ast);
+    debug!("ast: {:?}", &ast);
 
     Ok(())
 }
@@ -67,10 +77,21 @@ fn run_repl() -> Result<()> {
             Signal::Success(buffer) => {
                 let source = buffer.as_bytes();
                 tokenize(source)
+                    .inspect(|tokens| {
+                        debug!("tokens: {:?}", tokens);
+                    })
                     .and_then(|tokens| parse(source, &tokens))
+                    .inspect(|ast| {
+                        debug!("ast: {:?}", ast);
+                    })
                     .and_then(|ast| evaluate(&ast, &mut environment))
                     .inspect(|evaluation| {
-                        debug!("evaluation: {}", evaluation);
+                        debug!("evaluation: {:?}", evaluation);
+
+                        if let Value::Nil = evaluation {
+                        } else {
+                            println!("{:?}", evaluation);
+                        }
                     })
                     .inspect_err(|err| {
                         eprintln!("{}", err);
