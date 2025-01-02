@@ -1,0 +1,32 @@
+let rec merge_sort = fn(arr) {
+    if len(arr) <= 1 {
+        arr
+    } else {
+        let mid = floor(len(arr) / 2);
+        let left = slice(arr, 0, mid);
+        let right = slice(arr, mid, len(arr));
+
+        let rec merge = fn(left, right) {
+            if len(left) == 0 {
+                right
+            } else {
+                if len(right) == 0 {
+                    left
+                } else {
+                    if get(left, 0) <= get(right, 0) {
+                        [get(left, 0)] <> merge(slice(left, 1, len(left)), right)
+                    } else {
+                        [get(right, 0)] <> merge(left, slice(right, 1, len(right)))
+                    }
+                }
+            }
+        };
+
+        merge(merge_sort(left), merge_sort(right))
+    }
+};
+
+// Test
+let arr = [64, 34, 25, 12, 22, 11, 90];
+println("Sorting: " <> string(arr));
+println("Result: " <> string(merge_sort(arr)));

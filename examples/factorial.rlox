@@ -1,3 +1,4 @@
+// let rec factorial = fn(n) if n <= 1 1 else n * factorial(n - 1);
 let rec factorial = fn(n) {
     if n <= 1 {
         1
@@ -5,4 +6,5 @@ let rec factorial = fn(n) {
         n * factorial(n - 1)
     }
 };
-factorial(5)
+
+factorial(50)

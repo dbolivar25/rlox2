@@ -1,0 +1,11 @@
+let x = 0;
+let counter = fn() {
+    println(x);
+    x = x + 1;
+};
+
+counter();
+counter();
+counter();
+
+println(x);

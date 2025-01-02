@@ -1,0 +1,42 @@
+let partition = fn(arr, pivot) {
+    let lesser = [];
+    let greater = [];
+    let i = 0;
+    while i < len(arr) - 1 {
+        if get(arr, i) <= pivot {
+            lesser = lesser <> [get(arr, i)];
+        } else {
+            greater = greater <> [get(arr, i)];
+        };
+        i = i + 1;
+    };
+    [lesser, greater]
+};
+
+let rec quick_select = fn(arr, k) {
+    if len(arr) == 1 {
+        get(arr, 0)
+    } else {
+        let pivot = get(arr, len(arr) - 1);
+
+        let parts = partition(arr, pivot);
+
+        let lesser = get(parts, 0);
+        let greater = get(parts, 1);
+
+        if k <= len(lesser) {
+            quick_select(lesser, k)
+        } else {
+            if k == len(lesser) + 1 {
+                pivot
+            } else {
+                quick_select(greater, k - len(lesser) - 1)
+            }
+        }
+    }
+};
+
+// Test
+let arr = [7, 4, 6, 3, 9, 1];
+let k = 1;
+println("number " <> string(k) <> " smallest element is: " <> string(quick_select(arr, k)));
