@@ -25,7 +25,7 @@ fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
     debug!("ast: {:?}", &ast);
 
     let mut environment = create_standard_env();
-    let evaluation = evaluate(&ast, &mut environment)?;
+    let evaluation = evaluate(&source, &ast, &mut environment)?;
     debug!("evaluation: {:?}", evaluation);
 
     if let Value::Nil = evaluation {
@@ -84,7 +84,7 @@ fn run_repl() -> Result<()> {
                     .inspect(|ast| {
                         debug!("ast: {:?}", ast);
                     })
-                    .and_then(|ast| evaluate(&ast, &mut environment))
+                    .and_then(|ast| evaluate(source, &ast, &mut environment))
                     .inspect(|evaluation| {
                         debug!("evaluation: {:?}", evaluation);
 

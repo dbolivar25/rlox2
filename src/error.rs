@@ -1,4 +1,4 @@
-use crate::tokenizer::Token;
+use crate::{parser::Expr, tokenizer::Token};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -74,6 +74,16 @@ pub fn tokenizer_error<T>(source: &[u8], message: &str, start_byte: usize) -> Re
 pub fn parser_error<T>(source: &[u8], message: &str, token: &Token) -> Result<T> {
     let (line, column, context) = get_location(source, token.byte_span.start);
     Err(Error::Parser {
+        message: message.to_string(),
+        line,
+        column,
+        context,
+    })
+}
+
+pub fn runtime_error<T>(source: &[u8], message: &str, expr: &Expr) -> Result<T> {
+    let (line, column, context) = get_location(source, expr.byte_span.start);
+    Err(Error::Runtime {
         message: message.to_string(),
         line,
         column,
