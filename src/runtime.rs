@@ -83,7 +83,7 @@ pub enum Callable {
     BuiltIn {
         name: String,
         arity: usize,
-        func: Rc<dyn Fn(Vec<Value>) -> Result<Value>>,
+        func: Rc<dyn Fn(Vec<Value>) -> std::result::Result<Value, String>>,
     },
 }
 
@@ -130,39 +130,40 @@ pub fn evaluate(source: &[u8], expr: &Expr, env: &mut Environment) -> Result<Val
             recursive,
         } => {
             if *recursive {
-                // For recursive bindings, we need to:
-                // 1. Create placeholder in current scope
-                // 2. Evaluate initializer with access to placeholder
-                // 3. Update the binding with the real value
-                match evaluate(source, initializer, env)? {
-                    Value::Callable(Callable::Function {
-                        params,
-                        body,
-                        closure,
-                    }) => {
-                        // Create new closure that includes the function itself
-                        let mut func_env = closure.clone();
+                match &initializer.expr_type {
+                    ExprType::Literal(Literal::Function { params, body }) => {
+                        // First, create placeholder value in current env
+                        let placeholder_func = Value::Callable(Callable::Function {
+                            params: params.clone(),
+                            body: body.clone(),
+                            closure: env.clone(), // Use current env directly
+                        });
+
+                        // Add placeholder to current environment
+                        env.insert(name.clone(), placeholder_func.clone());
+
+                        // Now when we create the closure, it will already have access to the function
+                        let closure = env.fork();
+
+                        // Create the real function with proper closure
                         let func = Value::Callable(Callable::Function {
                             params: params.clone(),
                             body: body.clone(),
-                            closure: func_env.clone(),
+                            closure,
                         });
 
-                        // Add the function to its own environment
-                        func_env.insert(name.clone(), func.clone());
+                        // Update the current environment with the real function
+                        env.update_or(name, func.clone());
 
-                        // Add to current environment
-                        env.insert(name.clone(), func.clone());
                         Ok(func)
                     }
                     _ => runtime_error(
                         source,
                         "rec keyword can only be used with function definitions",
-                        expr,
+                        initializer,
                     ),
                 }
             } else {
-                // Non-recursive binding behaves as before
                 let value = evaluate(source, initializer, env)?;
                 env.insert(name.clone(), value.clone());
                 Ok(value)
@@ -170,7 +171,7 @@ pub fn evaluate(source: &[u8], expr: &Expr, env: &mut Environment) -> Result<Val
         }
         ExprType::Variable(name) => env.get(name).clone().ok_or_else(|| {
             runtime_error::<Value>(source, &format!("Undefined variable '{}'", name), expr)
-                .expect_err("runtime_error should only ever return an Err Result variant")
+                .expect_err("runtime_error should only ever return Result::Err")
         }),
         ExprType::Assign { name, value } => {
             let new_value = evaluate(source, value, env)?;
@@ -205,7 +206,7 @@ pub fn evaluate(source: &[u8], expr: &Expr, env: &mut Environment) -> Result<Val
             match cond_val {
                 Value::Boolean(true) => evaluate(source, then_branch, env),
                 Value::Boolean(false) => evaluate(source, else_branch, env),
-                _ => runtime_error(source, "Condition must evaluate to a boolean", expr),
+                _ => runtime_error(source, "Condition must evaluate to a boolean", condition),
             }
         }
         ExprType::While { condition, body } => {
@@ -217,7 +218,11 @@ pub fn evaluate(source: &[u8], expr: &Expr, env: &mut Environment) -> Result<Val
                     }
                     Value::Boolean(false) => break,
                     _ => {
-                        return runtime_error(source, "Condition must evaluate to a boolean", expr)
+                        return runtime_error(
+                            source,
+                            "Condition must evaluate to a boolean",
+                            condition,
+                        )
                     }
                 }
             }
@@ -273,7 +278,10 @@ pub fn evaluate(source: &[u8], expr: &Expr, env: &mut Environment) -> Result<Val
                                 expr,
                             );
                         }
-                        func(evaluated_args)
+                        func(evaluated_args).map_err(|msg| {
+                            runtime_error::<Value>(source, &msg, expr)
+                                .expect_err("runtime_error should only ever return Result::Err")
+                        })
                     }
                 },
                 _ => runtime_error(source, "Can only call functions and built-ins", expr),
