@@ -2,43 +2,50 @@ use crate::{
     error::{parser_error, Result},
     tokenizer::{Token, TokenType},
 };
+use std::ops::Range;
+
+#[derive(Debug, Clone)]
+pub struct Expr {
+    pub expr_type: ExprType,
+    pub byte_span: Range<usize>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Expr {
+pub enum ExprType {
     Literal(Literal),
     Unary {
         operator: UnaryOp,
-        right: Box<Expr>,
+        right: Box<ExprType>,
     },
     Binary {
-        left: Box<Expr>,
+        left: Box<ExprType>,
         operator: BinaryOp,
-        right: Box<Expr>,
+        right: Box<ExprType>,
     },
-    Grouping(Box<Expr>),
+    Grouping(Box<ExprType>),
     Let {
         name: String,
-        initializer: Box<Expr>,
+        initializer: Box<ExprType>,
         recursive: bool,
     },
-    Block(Vec<Expr>),
+    Block(Vec<ExprType>),
     If {
-        condition: Box<Expr>,
-        then_branch: Box<Expr>,
-        else_branch: Box<Expr>,
+        condition: Box<ExprType>,
+        then_branch: Box<ExprType>,
+        else_branch: Box<ExprType>,
     },
     While {
-        condition: Box<Expr>,
-        body: Box<Expr>,
+        condition: Box<ExprType>,
+        body: Box<ExprType>,
     },
     Call {
-        callee: Box<Expr>,
-        arguments: Vec<Expr>,
+        callee: Box<ExprType>,
+        arguments: Vec<ExprType>,
     },
     Variable(String),
     Assign {
         name: String,
-        value: Box<Expr>,
+        value: Box<ExprType>,
     },
 }
 
@@ -49,9 +56,9 @@ pub enum Literal {
     Boolean(bool),
     Function {
         params: Vec<String>,
-        body: Box<Expr>,
+        body: Box<ExprType>,
     },
-    List(Vec<Expr>),
+    List(Vec<ExprType>),
     Nil,
 }
 
@@ -97,7 +104,7 @@ pub enum BinaryOp {
     Or,
 }
 
-pub fn parse(source: &[u8], tokens: &[Token]) -> Result<Expr> {
+pub fn parse(source: &[u8], tokens: &[Token]) -> Result<ExprType> {
     // Assert tokens end with EOF
     assert!(
         tokens
@@ -113,7 +120,7 @@ pub fn parse(source: &[u8], tokens: &[Token]) -> Result<Expr> {
 }
 
 // Parse a sequence of expressions in a block context
-fn parse_scope(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_scope(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 0;
     let mut expressions = Vec::new();
 
@@ -143,7 +150,7 @@ fn parse_scope(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
                     && (tokens[consumed].token_type == TokenType::EOF
                         || tokens[consumed].token_type == TokenType::RightBrace)
                 {
-                    expressions.push(Expr::Literal(Literal::Nil));
+                    expressions.push(ExprType::Literal(Literal::Nil));
                 }
             }
             TokenType::EOF | TokenType::RightBrace => (),
@@ -157,10 +164,10 @@ fn parse_scope(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
         }
     }
 
-    Ok((Expr::Block(expressions), consumed))
+    Ok((ExprType::Block(expressions), consumed))
 }
 
-fn parse_expression(source: &[u8], tokens: &[Token], precedence: u8) -> Result<(Expr, usize)> {
+fn parse_expression(source: &[u8], tokens: &[Token], precedence: u8) -> Result<(ExprType, usize)> {
     assert!(
         tokens
             .last()
@@ -192,13 +199,13 @@ fn parse_expression(source: &[u8], tokens: &[Token], precedence: u8) -> Result<(
     Ok((left, consumed))
 }
 
-fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     match &tokens[0].token_type {
-        TokenType::Number(n) => Ok((Expr::Literal(Literal::Number(*n)), 1)),
-        TokenType::String(s) => Ok((Expr::Literal(Literal::String(s.clone())), 1)),
-        TokenType::True => Ok((Expr::Literal(Literal::Boolean(true)), 1)),
-        TokenType::False => Ok((Expr::Literal(Literal::Boolean(false)), 1)),
-        TokenType::Nil => Ok((Expr::Literal(Literal::Nil), 1)),
+        TokenType::Number(n) => Ok((ExprType::Literal(Literal::Number(*n)), 1)),
+        TokenType::String(s) => Ok((ExprType::Literal(Literal::String(s.clone())), 1)),
+        TokenType::True => Ok((ExprType::Literal(Literal::Boolean(true)), 1)),
+        TokenType::False => Ok((ExprType::Literal(Literal::Boolean(false)), 1)),
+        TokenType::Nil => Ok((ExprType::Literal(Literal::Nil), 1)),
         TokenType::Identifier(name) => {
             let mut consumed = 1;
 
@@ -239,14 +246,14 @@ fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
                 consumed += 1;
 
                 Ok((
-                    Expr::Call {
-                        callee: Box::new(Expr::Variable(name.clone())),
+                    ExprType::Call {
+                        callee: Box::new(ExprType::Variable(name.clone())),
                         arguments,
                     },
                     consumed,
                 ))
             } else {
-                Ok((Expr::Variable(name.clone()), consumed))
+                Ok((ExprType::Variable(name.clone()), consumed))
             }
         }
         TokenType::Let => parse_let(source, tokens),
@@ -308,14 +315,14 @@ fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
                 consumed += 1;
 
                 Ok((
-                    Expr::Call {
-                        callee: Box::new(Expr::Grouping(Box::new(expr))),
+                    ExprType::Call {
+                        callee: Box::new(ExprType::Grouping(Box::new(expr))),
                         arguments,
                     },
                     consumed,
                 ))
             } else {
-                Ok((Expr::Grouping(Box::new(expr)), consumed))
+                Ok((ExprType::Grouping(Box::new(expr)), consumed))
             }
         }
         TokenType::LeftBrace => {
@@ -344,7 +351,7 @@ fn parse_prefix(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
 
             let (right, right_consumed) = parse_expression(source, &tokens[1..], 8)?;
             Ok((
-                Expr::Unary {
+                ExprType::Unary {
                     operator,
                     right: Box::new(right),
                 },
@@ -359,8 +366,8 @@ fn parse_infix(
     source: &[u8],
     tokens: &[Token],
     precedence: u8,
-    left: Expr,
-) -> Result<(Expr, usize)> {
+    left: ExprType,
+) -> Result<(ExprType, usize)> {
     let operator = match &tokens[0].token_type {
         TokenType::Plus => BinaryOp::Add,
         TokenType::Minus => BinaryOp::Subtract,
@@ -384,13 +391,13 @@ fn parse_infix(
             }
 
             let name = match left {
-                Expr::Variable(name) => name,
+                ExprType::Variable(name) => name,
                 _ => return parser_error(source, "Invalid assignment target", &tokens[0]),
             };
 
             let (value, consumed) = parse_expression(source, &tokens[1..], 1)?;
             return Ok((
-                Expr::Assign {
+                ExprType::Assign {
                     name,
                     value: Box::new(value),
                 },
@@ -404,7 +411,7 @@ fn parse_infix(
     let (right, right_consumed) = parse_expression(source, &tokens[consumed..], precedence)?;
 
     Ok((
-        Expr::Binary {
+        ExprType::Binary {
             left: Box::new(left),
             operator,
             right: Box::new(right),
@@ -431,7 +438,7 @@ fn get_precedence(token: &TokenType) -> u8 {
     }
 }
 
-fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 1; // Skip 'let'
 
     // Check for 'rec' keyword
@@ -473,7 +480,7 @@ fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     consumed += init_consumed;
 
     Ok((
-        Expr::Let {
+        ExprType::Let {
             name,
             initializer: Box::new(initializer),
             recursive,
@@ -482,7 +489,7 @@ fn parse_let(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_if(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_if(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 1; // Skip 'if'
 
     // Parse condition
@@ -500,12 +507,12 @@ fn parse_if(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
             let (expr, count) = parse_expression(source, &tokens[consumed..], 0)?;
             (expr, count)
         } else {
-            (Expr::Literal(Literal::Nil), 0)
+            (ExprType::Literal(Literal::Nil), 0)
         };
     consumed += else_consumed;
 
     Ok((
-        Expr::If {
+        ExprType::If {
             condition: Box::new(condition),
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
@@ -514,7 +521,7 @@ fn parse_if(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_while(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_while(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 1; // Skip 'while'
 
     // Parse condition expression
@@ -526,7 +533,7 @@ fn parse_while(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     consumed += body_consumed;
 
     Ok((
-        Expr::While {
+        ExprType::While {
             condition: Box::new(condition),
             body: Box::new(body),
         },
@@ -534,7 +541,7 @@ fn parse_while(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_function(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_function(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 1; // Skip 'fn'
 
     // Expect opening parenthesis
@@ -575,7 +582,7 @@ fn parse_function(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     consumed += body_consumed;
 
     Ok((
-        Expr::Literal(Literal::Function {
+        ExprType::Literal(Literal::Function {
             params,
             body: Box::new(body),
         }),
@@ -583,13 +590,13 @@ fn parse_function(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     ))
 }
 
-fn parse_list(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
+fn parse_list(source: &[u8], tokens: &[Token]) -> Result<(ExprType, usize)> {
     let mut consumed = 1; // Skip '['
     let mut elements = Vec::new();
 
     // Handle empty list
     if consumed < tokens.len() && tokens[consumed].token_type == TokenType::RightSquare {
-        return Ok((Expr::Literal(Literal::List(elements)), consumed + 1));
+        return Ok((ExprType::Literal(Literal::List(elements)), consumed + 1));
     }
 
     // Parse first element
@@ -621,7 +628,7 @@ fn parse_list(source: &[u8], tokens: &[Token]) -> Result<(Expr, usize)> {
     }
     consumed += 1;
 
-    Ok((Expr::Literal(Literal::List(elements)), consumed))
+    Ok((ExprType::Literal(Literal::List(elements)), consumed))
 }
 
 #[cfg(test)]
@@ -630,7 +637,7 @@ mod tests {
     use crate::tokenizer::tokenize;
 
     // Helper function to tokenize and parse a string
-    fn parse_str(input: &str) -> Result<Expr> {
+    fn parse_str(input: &str) -> Result<ExprType> {
         let source = input.as_bytes();
         let tokens = tokenize(source)?;
         parse(source, &tokens)
@@ -638,14 +645,14 @@ mod tests {
 
     #[test]
     fn test_literals() -> Result<()> {
-        if let Expr::Block(exprs) = parse_str("42")? {
+        if let ExprType::Block(exprs) = parse_str("42")? {
             assert_eq!(exprs.len(), 1);
-            assert!(matches!(exprs[0], Expr::Literal(Literal::Number(42.0))));
+            assert!(matches!(exprs[0], ExprType::Literal(Literal::Number(42.0))));
         }
 
-        if let Expr::Block(exprs) = parse_str("\"hello\"")? {
+        if let ExprType::Block(exprs) = parse_str("\"hello\"")? {
             assert_eq!(exprs.len(), 1);
-            assert!(matches!(&exprs[0], Expr::Literal(Literal::String(s)) if s == "hello"));
+            assert!(matches!(&exprs[0], ExprType::Literal(Literal::String(s)) if s == "hello"));
         }
         Ok(())
     }
@@ -658,10 +665,10 @@ mod tests {
             let y = 2;
             let z = 3"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 3);
             for expr in exprs {
-                assert!(matches!(expr, Expr::Let { .. }));
+                assert!(matches!(expr, ExprType::Let { .. }));
             }
         }
 
@@ -670,13 +677,13 @@ mod tests {
             let f = fn() { 1 };
             let g = fn() { 2 }"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 2);
             for expr in exprs {
-                if let Expr::Let { initializer, .. } = expr {
+                if let ExprType::Let { initializer, .. } = expr {
                     assert!(matches!(
                         *initializer,
-                        Expr::Literal(Literal::Function { .. })
+                        ExprType::Literal(Literal::Function { .. })
                     ));
                 } else {
                     panic!("Expected let binding with function");
@@ -694,12 +701,12 @@ mod tests {
                 z * 2
             }"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Let { initializer, .. } = &exprs[0] {
-                if let Expr::Literal(Literal::Function { params, body }) = &**initializer {
+            if let ExprType::Let { initializer, .. } = &exprs[0] {
+                if let ExprType::Literal(Literal::Function { params, body }) = &**initializer {
                     assert_eq!(params, &vec!["x", "y"]);
-                    if let Expr::Block(body_exprs) = &**body {
+                    if let ExprType::Block(body_exprs) = &**body {
                         assert_eq!(body_exprs.len(), 2);
                     } else {
                         panic!("Expected block as function body");
@@ -715,53 +722,67 @@ mod tests {
     #[test]
     fn test_list_literals() -> Result<()> {
         // Test empty list
-        if let Expr::Block(exprs) = parse_str("[]")? {
+        if let ExprType::Block(exprs) = parse_str("[]")? {
             assert_eq!(exprs.len(), 1);
             assert!(
-                matches!(&exprs[0], Expr::Literal(Literal::List(elements)) if elements.is_empty())
+                matches!(&exprs[0], ExprType::Literal(Literal::List(elements)) if elements.is_empty())
             );
         }
 
         // Test simple list
-        if let Expr::Block(exprs) = parse_str("[1, 2, 3]")? {
+        if let ExprType::Block(exprs) = parse_str("[1, 2, 3]")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Literal(Literal::List(elements)) = &exprs[0] {
+            if let ExprType::Literal(Literal::List(elements)) = &exprs[0] {
                 assert_eq!(elements.len(), 3);
-                assert!(matches!(&elements[0], Expr::Literal(Literal::Number(1.0))));
-                assert!(matches!(&elements[1], Expr::Literal(Literal::Number(2.0))));
-                assert!(matches!(&elements[2], Expr::Literal(Literal::Number(3.0))));
+                assert!(matches!(
+                    &elements[0],
+                    ExprType::Literal(Literal::Number(1.0))
+                ));
+                assert!(matches!(
+                    &elements[1],
+                    ExprType::Literal(Literal::Number(2.0))
+                ));
+                assert!(matches!(
+                    &elements[2],
+                    ExprType::Literal(Literal::Number(3.0))
+                ));
             }
         }
 
         // Test mixed types
-        if let Expr::Block(exprs) = parse_str("[1, \"hello\", true]")? {
+        if let ExprType::Block(exprs) = parse_str("[1, \"hello\", true]")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Literal(Literal::List(elements)) = &exprs[0] {
+            if let ExprType::Literal(Literal::List(elements)) = &exprs[0] {
                 assert_eq!(elements.len(), 3);
-                assert!(matches!(&elements[0], Expr::Literal(Literal::Number(1.0))));
-                assert!(matches!(&elements[1], Expr::Literal(Literal::String(s)) if s == "hello"));
+                assert!(matches!(
+                    &elements[0],
+                    ExprType::Literal(Literal::Number(1.0))
+                ));
+                assert!(
+                    matches!(&elements[1], ExprType::Literal(Literal::String(s)) if s == "hello")
+                );
                 assert!(matches!(
                     &elements[2],
-                    Expr::Literal(Literal::Boolean(true))
+                    ExprType::Literal(Literal::Boolean(true))
                 ));
             }
         }
 
         // Test nested lists
-        if let Expr::Literal(Literal::List(exprs)) = parse_str("[[1, 2], [3, 4]]")? {
+        if let ExprType::Literal(Literal::List(exprs)) = parse_str("[[1, 2], [3, 4]]")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Literal(Literal::List(elements)) = &exprs[0] {
+            if let ExprType::Literal(Literal::List(elements)) = &exprs[0] {
                 assert_eq!(elements.len(), 2);
                 for inner in elements {
-                    assert!(matches!(inner, Expr::Literal(Literal::List(_))));
+                    assert!(matches!(inner, ExprType::Literal(Literal::List(_))));
                 }
             }
         }
 
         // Test trailing comma
-        if let Expr::Block(exprs) = parse_str("[1, 2, 3,]")? {
+        if let ExprType::Block(exprs) = parse_str("[1, 2, 3,]")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Literal(Literal::List(elements)) = &exprs[0] {
+            if let ExprType::Literal(Literal::List(elements)) = &exprs[0] {
                 assert_eq!(elements.len(), 3);
             }
         }
@@ -785,12 +806,12 @@ mod tests {
             }
         }"#;
 
-        if let Expr::Block(outer) = parse_str(input)? {
+        if let ExprType::Block(outer) = parse_str(input)? {
             assert_eq!(outer.len(), 1);
-            if let Expr::Block(inner) = &outer[0] {
+            if let ExprType::Block(inner) = &outer[0] {
                 assert_eq!(inner.len(), 2);
-                assert!(matches!(inner[0], Expr::Let { .. }));
-                assert!(matches!(inner[1], Expr::Block(_)));
+                assert!(matches!(inner[0], ExprType::Let { .. }));
+                assert!(matches!(inner[1], ExprType::Block(_)));
             }
         }
         Ok(())
@@ -800,22 +821,22 @@ mod tests {
     fn test_implicit_nil() -> Result<()> {
         // Test block with semicolon-terminated expression
         let input = "{ print(\"hello\"); }";
-        if let Expr::Block(outer) = parse_str(input)? {
+        if let ExprType::Block(outer) = parse_str(input)? {
             assert_eq!(outer.len(), 1); // The outer block has one expression
-            if let Expr::Block(inner) = &outer[0] {
+            if let ExprType::Block(inner) = &outer[0] {
                 assert_eq!(inner.len(), 2); // print + nil
-                assert!(matches!(inner[0], Expr::Call { .. }));
-                assert!(matches!(inner[1], Expr::Literal(Literal::Nil)));
+                assert!(matches!(inner[0], ExprType::Call { .. }));
+                assert!(matches!(inner[1], ExprType::Literal(Literal::Nil)));
             }
         }
 
         // Test block without semicolon-terminated expression
         let input = "{ print(\"hello\") }";
-        if let Expr::Block(outer) = parse_str(input)? {
+        if let ExprType::Block(outer) = parse_str(input)? {
             assert_eq!(outer.len(), 1);
-            if let Expr::Block(inner) = &outer[0] {
+            if let ExprType::Block(inner) = &outer[0] {
                 assert_eq!(inner.len(), 1);
-                assert!(matches!(inner[0], Expr::Call { .. }));
+                assert!(matches!(inner[0], ExprType::Call { .. }));
             }
         }
 
@@ -826,28 +847,28 @@ mod tests {
             print("inner");
         }
     }"#;
-        if let Expr::Block(outer) = parse_str(input)? {
+        if let ExprType::Block(outer) = parse_str(input)? {
             assert_eq!(outer.len(), 1); // The outer parse_str block
-            if let Expr::Block(block1) = &outer[0] {
+            if let ExprType::Block(block1) = &outer[0] {
                 assert_eq!(block1.len(), 2); // outer print and inner block. inner block has no ;
-                assert!(matches!(block1[0], Expr::Call { .. }));
-                if let Expr::Block(block2) = &block1[1] {
+                assert!(matches!(block1[0], ExprType::Call { .. }));
+                if let ExprType::Block(block2) = &block1[1] {
                     assert_eq!(block2.len(), 2); // inner print, nil
-                    assert!(matches!(block2[0], Expr::Call { .. }));
-                    assert!(matches!(block2[1], Expr::Literal(Literal::Nil)));
+                    assert!(matches!(block2[0], ExprType::Call { .. }));
+                    assert!(matches!(block2[1], ExprType::Literal(Literal::Nil)));
                 }
             }
         }
 
         // Test the implicit nil in a terminated let expression
         let input = "let x = { print(\"hello\"); }";
-        if let Expr::Block(outer) = parse_str(input)? {
+        if let ExprType::Block(outer) = parse_str(input)? {
             assert_eq!(outer.len(), 1);
-            if let Expr::Let { initializer, .. } = &outer[0] {
-                if let Expr::Block(block) = &**initializer {
+            if let ExprType::Let { initializer, .. } = &outer[0] {
+                if let ExprType::Block(block) = &**initializer {
                     assert_eq!(block.len(), 2);
-                    assert!(matches!(block[0], Expr::Call { .. }));
-                    assert!(matches!(block[1], Expr::Literal(Literal::Nil)));
+                    assert!(matches!(block[0], ExprType::Call { .. }));
+                    assert!(matches!(block[1], ExprType::Literal(Literal::Nil)));
                 }
             }
         }
@@ -864,10 +885,10 @@ mod tests {
                 print(x);
             }"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 2);
-            assert!(matches!(exprs[0], Expr::Let { .. }));
-            assert!(matches!(exprs[1], Expr::While { .. }));
+            assert!(matches!(exprs[0], ExprType::Let { .. }));
+            assert!(matches!(exprs[1], ExprType::While { .. }));
         }
         Ok(())
     }
@@ -881,17 +902,17 @@ mod tests {
                 print("not one");
             }"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::If {
+            if let ExprType::If {
                 condition,
                 then_branch,
                 else_branch,
             } = &exprs[0]
             {
-                assert!(matches!(**condition, Expr::Binary { .. }));
-                assert!(matches!(**then_branch, Expr::Block(_)));
-                assert!(matches!(**else_branch, Expr::Block(_)));
+                assert!(matches!(**condition, ExprType::Binary { .. }));
+                assert!(matches!(**then_branch, ExprType::Block(_)));
+                assert!(matches!(**else_branch, ExprType::Block(_)));
             }
         }
         Ok(())
@@ -903,10 +924,10 @@ mod tests {
             let f = fn(x) { x * 2 };
             f(21)"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 2);
-            assert!(matches!(exprs[0], Expr::Let { .. }));
-            assert!(matches!(exprs[1], Expr::Call { .. }));
+            assert!(matches!(exprs[0], ExprType::Let { .. }));
+            assert!(matches!(exprs[1], ExprType::Call { .. }));
         }
         Ok(())
     }
@@ -914,14 +935,17 @@ mod tests {
     #[test]
     fn test_iife() -> Result<()> {
         // Test expression-body IIFE
-        if let Expr::Block(exprs) = parse_str("(fn() 42)()")? {
+        if let ExprType::Block(exprs) = parse_str("(fn() 42)()")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Call { callee, arguments } = &exprs[0] {
-                assert!(matches!(**callee, Expr::Grouping(_)));
+            if let ExprType::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, ExprType::Grouping(_)));
                 assert!(arguments.is_empty());
 
-                if let Expr::Grouping(inner) = &**callee {
-                    assert!(matches!(**inner, Expr::Literal(Literal::Function { .. })));
+                if let ExprType::Grouping(inner) = &**callee {
+                    assert!(matches!(
+                        **inner,
+                        ExprType::Literal(Literal::Function { .. })
+                    ));
                 }
             } else {
                 panic!("Expected Call expression");
@@ -929,14 +953,17 @@ mod tests {
         }
 
         // Test block-body IIFE
-        if let Expr::Block(exprs) = parse_str("(fn() { 42 })()")? {
+        if let ExprType::Block(exprs) = parse_str("(fn() { 42 })()")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Call { callee, arguments } = &exprs[0] {
-                assert!(matches!(**callee, Expr::Grouping(_)));
+            if let ExprType::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, ExprType::Grouping(_)));
                 assert!(arguments.is_empty());
 
-                if let Expr::Grouping(inner) = &**callee {
-                    assert!(matches!(**inner, Expr::Literal(Literal::Function { .. })));
+                if let ExprType::Grouping(inner) = &**callee {
+                    assert!(matches!(
+                        **inner,
+                        ExprType::Literal(Literal::Function { .. })
+                    ));
                 }
             } else {
                 panic!("Expected Call expression");
@@ -944,30 +971,30 @@ mod tests {
         }
 
         // Test IIFE with arguments
-        if let Expr::Block(exprs) = parse_str("(fn(x) x * 2)(42)")? {
+        if let ExprType::Block(exprs) = parse_str("(fn(x) x * 2)(42)")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Call { callee, arguments } = &exprs[0] {
-                assert!(matches!(**callee, Expr::Grouping(_)));
+            if let ExprType::Call { callee, arguments } = &exprs[0] {
+                assert!(matches!(**callee, ExprType::Grouping(_)));
                 assert_eq!(arguments.len(), 1);
                 assert!(matches!(
                     &arguments[0],
-                    Expr::Literal(Literal::Number(42.0))
+                    ExprType::Literal(Literal::Number(42.0))
                 ));
             }
         }
 
         // Test IIFE in let binding
-        if let Expr::Block(exprs) = parse_str("let f = (fn() 42)()")? {
+        if let ExprType::Block(exprs) = parse_str("let f = (fn() 42)()")? {
             assert_eq!(exprs.len(), 1);
-            if let Expr::Let { initializer, .. } = &exprs[0] {
-                assert!(matches!(**initializer, Expr::Call { .. }));
+            if let ExprType::Let { initializer, .. } = &exprs[0] {
+                assert!(matches!(**initializer, ExprType::Call { .. }));
             }
         }
 
         // Verify that we still handle regular grouped expressions
-        if let Expr::Block(exprs) = parse_str("(42)")? {
+        if let ExprType::Block(exprs) = parse_str("(42)")? {
             assert_eq!(exprs.len(), 1);
-            assert!(matches!(exprs[0], Expr::Grouping(_)));
+            assert!(matches!(exprs[0], ExprType::Grouping(_)));
         }
 
         Ok(())
@@ -1001,14 +1028,14 @@ mod tests {
             };
             main()"#;
 
-        if let Expr::Block(exprs) = parse_str(input)? {
+        if let ExprType::Block(exprs) = parse_str(input)? {
             assert_eq!(exprs.len(), 4);
             // First three expressions should be let bindings
             (0..3).for_each(|i| {
-                assert!(matches!(exprs[i], Expr::Let { .. }));
+                assert!(matches!(exprs[i], ExprType::Let { .. }));
             });
             // Last expression should be a function call
-            assert!(matches!(exprs[3], Expr::Call { .. }));
+            assert!(matches!(exprs[3], ExprType::Call { .. }));
         }
         Ok(())
     }

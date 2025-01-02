@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::parser::{BinaryOp, Expr, Literal, UnaryOp};
+use crate::parser::{BinaryOp, ExprType, Literal, UnaryOp};
 use crate::{environment::Environment, error::Result};
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -77,7 +77,7 @@ impl Debug for Value {
 pub enum Callable {
     Function {
         params: Vec<String>,
-        body: Box<Expr>,
+        body: Box<ExprType>,
         closure: Environment,
     },
     BuiltIn {
@@ -114,17 +114,17 @@ impl PartialEq for Callable {
 
 impl Eq for Callable {}
 
-pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
+pub fn evaluate(expr: &ExprType, env: &mut Environment) -> Result<Value> {
     match expr {
-        Expr::Literal(lit) => evaluate_literal(lit, env),
-        Expr::Unary { operator, right } => evaluate_unary(operator, right, env),
-        Expr::Binary {
+        ExprType::Literal(lit) => evaluate_literal(lit, env),
+        ExprType::Unary { operator, right } => evaluate_unary(operator, right, env),
+        ExprType::Binary {
             left,
             operator,
             right,
         } => evaluate_binary(left, operator, right, env),
-        Expr::Grouping(expr) => evaluate(expr, env),
-        Expr::Let {
+        ExprType::Grouping(expr) => evaluate(expr, env),
+        ExprType::Let {
             name,
             initializer,
             recursive,
@@ -170,13 +170,13 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
                 Ok(value)
             }
         }
-        Expr::Variable(name) => env.get(name).clone().ok_or_else(|| Error::Runtime {
+        ExprType::Variable(name) => env.get(name).clone().ok_or_else(|| Error::Runtime {
             message: format!("Undefined variable '{}'", name),
             line: 0,
             column: 0,
             context: String::new(),
         }),
-        Expr::Assign { name, value } => {
+        ExprType::Assign { name, value } => {
             let new_value = evaluate(value, env)?;
             // Try to update existing value
             match env.get(name) {
@@ -192,7 +192,7 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
                 }),
             }
         }
-        Expr::Block(expressions) => {
+        ExprType::Block(expressions) => {
             let mut result = Value::Nil;
             let mut block_env = env.extend(); // Create new scope
 
@@ -201,7 +201,7 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
             }
             Ok(result)
         }
-        Expr::If {
+        ExprType::If {
             condition,
             then_branch,
             else_branch,
@@ -218,7 +218,7 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
                 }),
             }
         }
-        Expr::While { condition, body } => {
+        ExprType::While { condition, body } => {
             let mut result = Value::Nil;
             loop {
                 match evaluate(condition, env)? {
@@ -238,7 +238,7 @@ pub fn evaluate(expr: &Expr, env: &mut Environment) -> Result<Value> {
             }
             Ok(result)
         }
-        Expr::Call { callee, arguments } => {
+        ExprType::Call { callee, arguments } => {
             let callee_val = evaluate(callee, env)?;
             let mut evaluated_args = Vec::with_capacity(arguments.len());
 
@@ -325,7 +325,7 @@ fn evaluate_literal(lit: &Literal, env: &mut Environment) -> Result<Value> {
     }
 }
 
-fn evaluate_unary(operator: &UnaryOp, right: &Expr, env: &mut Environment) -> Result<Value> {
+fn evaluate_unary(operator: &UnaryOp, right: &ExprType, env: &mut Environment) -> Result<Value> {
     let right_val = evaluate(right, env)?;
 
     match operator {
@@ -351,9 +351,9 @@ fn evaluate_unary(operator: &UnaryOp, right: &Expr, env: &mut Environment) -> Re
 }
 
 fn evaluate_binary(
-    left: &Expr,
+    left: &ExprType,
     operator: &BinaryOp,
-    right: &Expr,
+    right: &ExprType,
     env: &mut Environment,
 ) -> Result<Value> {
     let left_val = evaluate(left, env)?;
