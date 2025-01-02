@@ -1,5 +1,4 @@
 use crate::environment::Environment;
-use crate::error::Error;
 use crate::runtime::{Callable, Value};
 use rand::Rng;
 use std::io::{self, Write};
@@ -27,12 +26,8 @@ pub fn create_standard_env() -> Environment {
     define_builtin!("print", 1, |args| {
         print!(
             "{}",
-            args.first().ok_or_else(|| Error::Runtime {
-                message: "print requires 1 argument".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            })?
+            args.first()
+                .ok_or_else(|| "print requires 1 argument".to_string())?
         );
         Ok(Value::Nil)
     });
@@ -40,55 +35,33 @@ pub fn create_standard_env() -> Environment {
     define_builtin!("println", 1, |args| {
         println!(
             "{}",
-            args.first().ok_or_else(|| Error::Runtime {
-                message: "println requires 1 argument".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            })?
+            args.first()
+                .ok_or_else(|| "println requires 1 argument".to_string())?
         );
         Ok(Value::Nil)
     });
 
     define_builtin!("input", 1, |args| {
-        let prompt = args.first().ok_or_else(|| Error::Runtime {
-            message: "input requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let prompt = args
+            .first()
+            .ok_or_else(|| "input requires 1 argument".to_string())?;
 
         // Print the prompt and flush stdout to ensure it appears before input
         match prompt {
             Value::String(s) => {
                 print!("{}", s);
-                io::stdout().flush().map_err(|e| Error::Runtime {
-                    message: format!("IO error: {}", e),
-                    line: 0,
-                    column: 0,
-                    context: String::new(),
-                })?;
+                io::stdout()
+                    .flush()
+                    .map_err(|e| format!("IO error: {}", e))?;
             }
-            _ => {
-                return Err(Error::Runtime {
-                    message: "input prompt must be a string".to_string(),
-                    line: 0,
-                    column: 0,
-                    context: String::new(),
-                })
-            }
+            _ => return Err("input prompt must be a string".to_string()),
         }
 
         // Read user input
         let mut input = String::new();
         io::stdin()
             .read_line(&mut input)
-            .map_err(|e| Error::Runtime {
-                message: format!("Failed to read input: {}", e),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            })?;
+            .map_err(|e| format!("Failed to read input: {}", e))?;
 
         // Trim the trailing newline and return
         Ok(Value::String(input.trim_end().to_string()))
@@ -96,12 +69,9 @@ pub fn create_standard_env() -> Environment {
 
     // Type functions
     define_builtin!("type", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "type requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "type requires 1 argument".to_string())?;
 
         let type_name = match arg {
             Value::Number(_) => "number",
@@ -116,71 +86,103 @@ pub fn create_standard_env() -> Environment {
 
     // List operations
     define_builtin!("len", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "len requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "len requires 1 argument".to_string())?;
 
         match arg {
             Value::List(list) => Ok(Value::Number(list.len() as f64)),
             Value::String(s) => Ok(Value::Number(s.len() as f64)),
-            _ => Err(Error::Runtime {
-                message: "len() takes a list or string argument".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("len() takes a list or string argument".to_string()),
         }
     });
 
     define_builtin!("push", 2, |args| {
-        let list = args.first().ok_or_else(|| Error::Runtime {
-            message: "push requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let list = args
+            .first()
+            .ok_or_else(|| "push requires 2 arguments".to_string())?;
 
-        let value = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "push requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let value = args
+            .get(1)
+            .ok_or_else(|| "push requires 2 arguments".to_string())?;
 
         if let Value::List(list) = list {
             let mut new_list = list.clone();
             new_list.push(value.clone());
             Ok(Value::List(new_list))
         } else {
-            Err(Error::Runtime {
-                message: "First argument to push() must be a list".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            })
+            Err("First argument to push() must be a list".to_string())
+        }
+    });
+
+    define_builtin!("get", 2, |args| {
+        let list = args
+            .first()
+            .ok_or_else(|| "get requires 2 arguments".to_string())?;
+
+        let index = args
+            .get(1)
+            .ok_or_else(|| "get requires 2 arguments".to_string())?;
+
+        match (list, index) {
+            (Value::List(list), Value::Number(idx)) => {
+                let i = idx.trunc() as usize;
+                if i < list.len() {
+                    Ok(list[i].clone())
+                } else {
+                    Err(format!(
+                        "Index {} out of bounds for list of length {}",
+                        i,
+                        list.len()
+                    ))
+                }
+            }
+            (Value::List(_), _) => Err("Second argument to get() must be a number".to_string()),
+            _ => Err("First argument to get() must be a list".to_string()),
+        }
+    });
+
+    define_builtin!("slice", 3, |args| {
+        let list = args
+            .first()
+            .ok_or_else(|| "slice requires 3 arguments".to_string())?;
+
+        let start = args
+            .get(1)
+            .ok_or_else(|| "slice requires 3 arguments".to_string())?;
+
+        let end = args
+            .get(2)
+            .ok_or_else(|| "slice requires 3 arguments".to_string())?;
+
+        match (list, start, end) {
+            (Value::List(list), Value::Number(start), Value::Number(end)) => {
+                let start = start.trunc() as usize;
+                let end = end.trunc() as usize;
+                if start <= end && end <= list.len() {
+                    Ok(Value::List(list[start..end].to_vec()))
+                } else {
+                    Err(format!(
+                        "Invalid slice range {}..{} for list of length {}",
+                        start,
+                        end,
+                        list.len()
+                    ))
+                }
+            }
+            _ => Err("slice requires a list and two numbers".to_string()),
         }
     });
 
     // Math functions
     define_builtin!("sqrt", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "sqrt requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "sqrt requires 1 argument".to_string())?;
 
         match arg {
             Value::Number(n) if *n >= 0.0 => Ok(Value::Number(n.sqrt())),
-            _ => Err(Error::Runtime {
-                message: "sqrt() takes a non-negative number argument".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("sqrt() takes a non-negative number argument".to_string()),
         }
     });
 
@@ -190,96 +192,58 @@ pub fn create_standard_env() -> Environment {
     });
 
     define_builtin!("random_range", 2, |args| {
-        let min = args.first().ok_or_else(|| Error::Runtime {
-            message: "random_range requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let min = args
+            .first()
+            .ok_or_else(|| "random_range requires 2 arguments".to_string())?;
 
-        let max = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "random_range requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let max = args
+            .get(1)
+            .ok_or_else(|| "random_range requires 2 arguments".to_string())?;
 
         match (min, max) {
             (Value::Number(min), Value::Number(max)) => {
                 if min >= max {
-                    Err(Error::Runtime {
-                        message: "random_range: min must be less than max".to_string(),
-                        line: 0,
-                        column: 0,
-                        context: String::new(),
-                    })
+                    Err("random_range: min must be less than max".to_string())
                 } else {
                     Ok(Value::Number(rand::thread_rng().gen_range(*min..*max)))
                 }
             }
-            _ => Err(Error::Runtime {
-                message: "random_range requires two numbers".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("random_range requires two numbers".to_string()),
         }
     });
 
     define_builtin!("random_int_range", 2, |args| {
-        let min = args.first().ok_or_else(|| Error::Runtime {
-            message: "random_range requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let min = args
+            .first()
+            .ok_or_else(|| "random_range requires 2 arguments".to_string())?;
 
-        let max = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "random_range requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let max = args
+            .get(1)
+            .ok_or_else(|| "random_range requires 2 arguments".to_string())?;
 
         match (min, max) {
             (Value::Number(min), Value::Number(max)) => {
                 if min >= max {
-                    Err(Error::Runtime {
-                        message: "random_range: min must be less than max".to_string(),
-                        line: 0,
-                        column: 0,
-                        context: String::new(),
-                    })
+                    Err("random_range: min must be less than max".to_string())
                 } else {
                     Ok(Value::Number(
                         rand::thread_rng().gen_range(*min..*max).trunc(),
                     ))
                 }
             }
-            _ => Err(Error::Runtime {
-                message: "random_range requires two numbers".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("random_range requires two numbers".to_string()),
         }
     });
 
     // String utilities
     define_builtin!("split", 2, |args| {
-        let string = args.first().ok_or_else(|| Error::Runtime {
-            message: "split requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let string = args
+            .first()
+            .ok_or_else(|| "split requires 2 arguments".to_string())?;
 
-        let delimiter = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "split requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let delimiter = args
+            .get(1)
+            .ok_or_else(|| "split requires 2 arguments".to_string())?;
 
         match (string, delimiter) {
             (Value::String(s), Value::String(delim)) => {
@@ -289,30 +253,19 @@ pub fn create_standard_env() -> Environment {
                     .collect();
                 Ok(Value::List(parts))
             }
-            _ => Err(Error::Runtime {
-                message: "split requires two strings".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("split requires two strings".to_string()),
         }
     });
 
     // Advanced list operations
     define_builtin!("map", 2, |args| {
-        let list = args.first().ok_or_else(|| Error::Runtime {
-            message: "map requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let list = args
+            .first()
+            .ok_or_else(|| "map requires 2 arguments".to_string())?;
 
-        let func = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "map requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let func = args
+            .get(1)
+            .ok_or_else(|| "map requires 2 arguments".to_string())?;
 
         match (list, func) {
             (Value::List(list), Value::Callable(func)) => {
@@ -320,13 +273,9 @@ pub fn create_standard_env() -> Environment {
                 for item in list {
                     let result = match func {
                         Callable::Function { .. } => {
-                            return Err(Error::Runtime {
-                                message: "User-defined functions not supported in map yet"
-                                    .to_string(),
-                                line: 0,
-                                column: 0,
-                                context: String::new(),
-                            })
+                            return Err(
+                                "User-defined functions not supported in map yet".to_string()
+                            )
                         }
                         Callable::BuiltIn { func, .. } => func(vec![item.clone()])?,
                     };
@@ -334,29 +283,18 @@ pub fn create_standard_env() -> Environment {
                 }
                 Ok(Value::List(results))
             }
-            _ => Err(Error::Runtime {
-                message: "map requires a list and a function".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("map requires a list and a function".to_string()),
         }
     });
 
     define_builtin!("filter", 2, |args| {
-        let list = args.first().ok_or_else(|| Error::Runtime {
-            message: "filter requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let list = args
+            .first()
+            .ok_or_else(|| "filter requires 2 arguments".to_string())?;
 
-        let func = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "filter requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let func = args
+            .get(1)
+            .ok_or_else(|| "filter requires 2 arguments".to_string())?;
 
         match (list, func) {
             (Value::List(list), Value::Callable(func)) => {
@@ -364,13 +302,9 @@ pub fn create_standard_env() -> Environment {
                 for item in list {
                     let result = match func {
                         Callable::Function { .. } => {
-                            return Err(Error::Runtime {
-                                message: "User-defined functions not supported in filter yet"
-                                    .to_string(),
-                                line: 0,
-                                column: 0,
-                                context: String::new(),
-                            })
+                            return Err(
+                                "User-defined functions not supported in filter yet".to_string()
+                            )
                         }
                         Callable::BuiltIn { func, .. } => func(vec![item.clone()])?,
                     };
@@ -380,36 +314,22 @@ pub fn create_standard_env() -> Environment {
                 }
                 Ok(Value::List(results))
             }
-            _ => Err(Error::Runtime {
-                message: "filter requires a list and a function".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("filter requires a list and a function".to_string()),
         }
     });
 
     define_builtin!("reduce", 3, |args| {
-        let list = args.first().ok_or_else(|| Error::Runtime {
-            message: "reduce requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let list = args
+            .first()
+            .ok_or_else(|| "reduce requires 3 arguments".to_string())?;
 
-        let func = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "reduce requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let func = args
+            .get(1)
+            .ok_or_else(|| "reduce requires 3 arguments".to_string())?;
 
-        let initial = args.get(2).ok_or_else(|| Error::Runtime {
-            message: "reduce requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let initial = args
+            .get(2)
+            .ok_or_else(|| "reduce requires 3 arguments".to_string())?;
 
         match (list, func) {
             (Value::List(list), Value::Callable(func)) => {
@@ -417,35 +337,23 @@ pub fn create_standard_env() -> Environment {
                 for item in list {
                     acc = match func {
                         Callable::Function { .. } => {
-                            return Err(Error::Runtime {
-                                message: "User-defined functions not supported in reduce yet"
-                                    .to_string(),
-                                line: 0,
-                                column: 0,
-                                context: String::new(),
-                            })
+                            return Err(
+                                "User-defined functions not supported in reduce yet".to_string()
+                            )
                         }
                         Callable::BuiltIn { func, .. } => func(vec![acc, item.clone()])?,
                     };
                 }
                 Ok(acc)
             }
-            _ => Err(Error::Runtime {
-                message: "reduce requires a list and a function".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("reduce requires a list and a function".to_string()),
         }
     });
 
     define_builtin!("reverse", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "reverse requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "reverse requires 1 argument".to_string())?;
 
         match arg {
             Value::List(list) => {
@@ -454,197 +362,138 @@ pub fn create_standard_env() -> Environment {
                 Ok(Value::List(reversed))
             }
             Value::String(s) => Ok(Value::String(s.chars().rev().collect())),
-            _ => Err(Error::Runtime {
-                message: "reverse requires a list or string".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("reverse requires a list or string".to_string()),
         }
     });
 
     // String manipulation
     define_builtin!("trim", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "trim requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "trim requires 1 argument".to_string())?;
 
         match arg {
             Value::String(s) => Ok(Value::String(s.trim().to_string())),
-            _ => Err(Error::Runtime {
-                message: "trim requires a string".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("trim requires a string".to_string()),
         }
     });
 
     define_builtin!("replace", 3, |args| {
-        let string = args.first().ok_or_else(|| Error::Runtime {
-            message: "replace requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let string = args
+            .first()
+            .ok_or_else(|| "replace requires 3 arguments".to_string())?;
 
-        let pattern = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "replace requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let pattern = args
+            .get(1)
+            .ok_or_else(|| "replace requires 3 arguments".to_string())?;
 
-        let replacement = args.get(2).ok_or_else(|| Error::Runtime {
-            message: "replace requires 3 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let replacement = args
+            .get(2)
+            .ok_or_else(|| "replace requires 3 arguments".to_string())?;
 
         match (string, pattern, replacement) {
             (Value::String(s), Value::String(from), Value::String(to)) => {
                 Ok(Value::String(s.replace(from, to)))
             }
-            _ => Err(Error::Runtime {
-                message: "replace requires three strings".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("replace requires three strings".to_string()),
         }
     });
 
     // Math utilities
     define_builtin!("round", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "round requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "round requires 1 argument".to_string())?;
 
         match arg {
             Value::Number(n) => Ok(Value::Number(n.round())),
-            _ => Err(Error::Runtime {
-                message: "round requires a number".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("round requires a number".to_string()),
         }
     });
 
     define_builtin!("abs", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "abs requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "abs requires 1 argument".to_string())?;
 
         match arg {
             Value::Number(n) => Ok(Value::Number(n.abs())),
-            _ => Err(Error::Runtime {
-                message: "abs requires a number".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("abs requires a number".to_string()),
         }
     });
 
     define_builtin!("min", 2, |args| {
-        let a = args.first().ok_or_else(|| Error::Runtime {
-            message: "min requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let a = args
+            .first()
+            .ok_or_else(|| "min requires 2 arguments".to_string())?;
 
-        let b = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "min requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let b = args
+            .get(1)
+            .ok_or_else(|| "min requires 2 arguments".to_string())?;
 
         match (a, b) {
             (Value::Number(x), Value::Number(y)) => Ok(Value::Number(x.min(*y))),
-            _ => Err(Error::Runtime {
-                message: "min requires two numbers".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("min requires two numbers".to_string()),
         }
     });
 
     define_builtin!("max", 2, |args| {
-        let a = args.first().ok_or_else(|| Error::Runtime {
-            message: "max requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let a = args
+            .first()
+            .ok_or_else(|| "max requires 2 arguments".to_string())?;
 
-        let b = args.get(1).ok_or_else(|| Error::Runtime {
-            message: "max requires 2 arguments".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let b = args
+            .get(1)
+            .ok_or_else(|| "max requires 2 arguments".to_string())?;
 
         match (a, b) {
             (Value::Number(x), Value::Number(y)) => Ok(Value::Number(x.max(*y))),
-            _ => Err(Error::Runtime {
-                message: "max requires two numbers".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("max requires two numbers".to_string()),
+        }
+    });
+
+    define_builtin!("floor", 1, |args| {
+        let num = args
+            .first()
+            .ok_or_else(|| "floor requires 1 argument".to_string())?;
+
+        match num {
+            Value::Number(n) => Ok(Value::Number(n.floor())),
+            _ => Err("floor requires a number".to_string()),
+        }
+    });
+
+    define_builtin!("ceil", 1, |args| {
+        let num = args
+            .first()
+            .ok_or_else(|| "ceil requires 1 argument".to_string())?;
+
+        match num {
+            Value::Number(n) => Ok(Value::Number(n.ceil())),
+            _ => Err("ceil requires a number".to_string()),
         }
     });
 
     // Type conversion
     define_builtin!("number", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "number requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "number requires 1 argument".to_string())?;
 
         match arg {
             Value::String(s) => s
                 .parse::<f64>()
                 .map(Value::Number)
-                .map_err(|_| Error::Runtime {
-                    message: "Could not convert string to number".to_string(),
-                    line: 0,
-                    column: 0,
-                    context: String::new(),
-                }),
+                .map_err(|_| "Could not convert string to number".to_string()),
             Value::Number(n) => Ok(Value::Number(*n)),
-            _ => Err(Error::Runtime {
-                message: "number requires a string or number".to_string(),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            }),
+            _ => Err("number requires a string or number".to_string()),
         }
     });
 
     define_builtin!("string", 1, |args| {
-        let arg = args.first().ok_or_else(|| Error::Runtime {
-            message: "string requires 1 argument".to_string(),
-            line: 0,
-            column: 0,
-            context: String::new(),
-        })?;
+        let arg = args
+            .first()
+            .ok_or_else(|| "string requires 1 argument".to_string())?;
 
         Ok(Value::String(arg.to_string()))
     });
@@ -654,12 +503,7 @@ pub fn create_standard_env() -> Environment {
         let start = SystemTime::now();
         let since_epoch = start
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| Error::Runtime {
-                message: format!("Time error: {}", e),
-                line: 0,
-                column: 0,
-                context: String::new(),
-            })?;
+            .map_err(|e| format!("Time error: {}", e))?;
         Ok(Value::Number(since_epoch.as_secs_f64()))
     });
 
@@ -669,10 +513,9 @@ pub fn create_standard_env() -> Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Result;
 
     #[test]
-    fn test_stdlib_functions() -> Result<()> {
+    fn test_stdlib_functions() -> Result<(), String> {
         let env = create_standard_env();
 
         // Test that standard functions exist
