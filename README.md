@@ -1,8 +1,8 @@
 # rlox2
 
-A Rust implementation of a dynamic programming language interpreter with a focus
-on simplicity and extensibility. rlox2 features lexical scoping, first-class
-functions, closures, and a rich standard library.
+A dynamic programming language interpreter with a focus on simplicity and
+extensibility. rlox2 features lexical scoping, first-class functions, closures,
+and a rich standard library.
 
 ## Features
 
