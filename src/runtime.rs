@@ -438,7 +438,7 @@ mod tests {
     use super::*;
     use crate::environment::Environment;
     use crate::parser::parse;
-    use crate::stdlib::create_standard_env;
+    use crate::stdlib::default_env;
     use crate::tokenizer::tokenize;
 
     #[test]
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_built_in_functions() -> Result<()> {
-        let mut env = create_standard_env();
+        let mut env = default_env();
 
         // Test println (should return nil)
         let source = b"println(\"hello\")";
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_function_calls() -> Result<()> {
-        let mut env = create_standard_env();
+        let mut env = default_env();
 
         // Test simple function definition and call
         let source = b"

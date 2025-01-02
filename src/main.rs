@@ -9,7 +9,7 @@ use rlox2::{
     parser::parse,
     repl::{REPLPrompt, REPLValidator, SyntaxHighlighter},
     runtime::{evaluate, Value},
-    stdlib::create_standard_env,
+    stdlib::default_env,
     tokenizer::tokenize,
 };
 use std::{fs, path::PathBuf};
@@ -24,7 +24,7 @@ fn run_file(file: PathBuf, _args: Vec<String>) -> Result<()> {
     let ast = parse(&source, &tokens)?;
     debug!("ast: {:?}", &ast);
 
-    let mut environment = create_standard_env();
+    let mut environment = default_env();
     let evaluation = evaluate(&source, &ast, &mut environment)?;
     debug!("evaluation: {:?}", evaluation);
 
@@ -70,7 +70,7 @@ fn run_repl() -> Result<()> {
 
     let prompt = REPLPrompt;
 
-    let mut environment = create_standard_env();
+    let mut environment = default_env();
 
     loop {
         match line_editor.read_line(&prompt)? {

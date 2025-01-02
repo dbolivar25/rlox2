@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn create_standard_env() -> Environment {
+pub fn default_env() -> Environment {
     let mut env = Environment::new();
 
     // Helper macro to define built-in functions with error handling
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_stdlib_functions() -> Result<(), String> {
-        let env = create_standard_env();
+        let env = default_env();
 
         // Test that standard functions exist
         assert!(matches!(
