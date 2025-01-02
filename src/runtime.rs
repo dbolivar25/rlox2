@@ -290,7 +290,7 @@ fn evaluate_literal(source: &[u8], lit: &Literal, env: &mut Environment) -> Resu
         Literal::Function { params, body } => Ok(Value::Callable(Callable::Function {
             params: params.clone(),
             body: body.clone(),
-            closure: env.clone(), // Capture current environment
+            closure: env.fork(), // Capture current environment
         })),
         Literal::List(items) => {
             let mut values = Vec::with_capacity(items.len());
