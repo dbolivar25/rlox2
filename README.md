@@ -128,7 +128,7 @@ while i < 10 {
 ```rust
 // Function with block body
 let greet = fn(name) {
-    println("Hello, " + name + "!");   // Semicolon required
+    println("Hello, " <> name <> "!");   // Semicolon required
     "Greeting completed"               // Return value, no semicolon needed
 };
 
