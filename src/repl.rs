@@ -143,6 +143,7 @@ impl Highlighter for SyntaxHighlighter {
                     match &token.token_type {
                         // Keywords
                         TokenType::Let
+                        | TokenType::Rec
                         | TokenType::If
                         | TokenType::Else
                         | TokenType::Fn
